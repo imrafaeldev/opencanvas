@@ -242,10 +242,26 @@ svg { display: block; }
 
 /* diagrama: caixa estável + área útil preenchida */
 .diagram-frame { display: flex; flex-direction: column; overflow: hidden; }
-.diagram-bar { display: flex; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--border-soft); align-items: center; }
+.diagram-bar { display: flex; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--border-soft); align-items: center; flex-wrap: wrap; }
 .diagram-tool { padding: 7px 13px; font-size: 13.5px; }
 .diagram-hint { margin-left: auto; margin-right: var(--sp-2); font-size: 13.5px; color: var(--dim); }
 .diagram-canvas { position: relative; width: 100%; padding: var(--sp-3) var(--sp-4); display: grid; place-items: center; }
+/* viewport pan/zoom: scroll nativo + arrasto; o svg tem tamanho real (geo*k) */
+.diagram-scroll { display: flex; overflow: auto; cursor: grab; touch-action: pan-x pan-y; overscroll-behavior: contain; }
+.diagram-scroll:active { cursor: grabbing; }
+.diagram-scroll .diagram-svg { display: block; }
+.diagram-zoom { font-size: 13px; font-variant-numeric: tabular-nums; color: var(--dim); min-width: 48px; text-align: center; }
+/* tooltip contextual do nó selecionado */
+.diagram-tip { position: absolute; left: var(--sp-3); bottom: var(--sp-3); z-index: 5; max-width: min(340px, 80%); background: rgba(11, 18, 36, 0.96); border: 1px solid var(--border-blue); border-radius: var(--radius-s); padding: var(--sp-2) var(--sp-3); box-shadow: 0 12px 32px rgba(0,0,0,0.45); font-size: var(--fs-label); }
+.diagram-tip-head { display: flex; align-items: center; gap: var(--sp-2); }
+.diagram-tip-head strong { flex: 1; font-size: 15px; }
+.diagram-tip-sub { color: var(--dim); font-size: 13px; margin-top: 2px; }
+.diagram-tip p { color: var(--muted); margin: var(--sp-1) 0 0; line-height: 1.5; }
+.diagram-tip ul { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: grid; gap: 4px; }
+.diagram-link { background: none; border: 0; padding: 0; color: var(--blue); cursor: pointer; font-size: 13.5px; text-align: left; }
+.diagram-link:hover { text-decoration: underline; }
+/* diagnóstico: apenas com ?debug ou prop debug */
+.diagram-debug { border-top: 1px solid var(--border-soft); padding: 6px var(--sp-4); font-family: var(--mono); font-size: 12px; color: var(--dim); }
 /* seleção contextual: o resto esmaece, o caminho ativo destaca */
 .diagram-node { cursor: pointer; outline: none; }
 .diagram-node:focus-visible rect { stroke-width: 3; stroke-dasharray: 7 4; }
