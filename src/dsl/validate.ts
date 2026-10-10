@@ -6,10 +6,36 @@ const BLOCK_TYPES = new Set([
   "callout","code","image","chart","timeline","steps","comparison","tabs",
   "accordion","tree","diagram",
   "hero","step-cards","split","compare","chain","features","takeaway","payload","security",
+  "overview","process-flow","architecture","technical","code-walkthrough","summary",
 ]);
+
+// Vocabulários semânticos: o renderer decide o efeito; nada de CSS arbitrário.
+const IMPORTANCE = new Set(["primary", "secondary", "supporting"]);
+const COMPOSITION = new Set(["auto", "row", "grid", "stack", "focus", "split", "asymmetric"]);
+const ALIGNMENT = new Set(["center", "start"]);
+const DENSITY = new Set(["compact", "comfortable", "spacious"]);
+const DISTRIBUTION = new Set(["layered", "cluster"]);
 
 function err(code: CanvasError["code"], message: string, path?: string, hint?: string): CanvasError {
   return { code, message, path, hint };
+}
+
+/** Propriedades de composição são validadas na mesma passagem dos tipos,
+ *  para que o agente receba path+hint e corrija só o campo indicado. */
+function checkComposition(b: any, p: string): CanvasError | null {
+  if (b.importance !== undefined && !IMPORTANCE.has(b.importance))
+    return err("DSL_SCHEMA_INVALID", `importance inválido: ${b.importance}`, `${p}.importance`, "Use primary (principal), secondary ou supporting (detalhe)");
+  if (b.composition !== undefined && !COMPOSITION.has(b.composition))
+    return err("DSL_SCHEMA_INVALID", `composition inválida: ${b.composition}`, `${p}.composition`, "Use auto, row, grid, stack, focus, split ou asymmetric");
+  if (b.alignment !== undefined && !ALIGNMENT.has(b.alignment))
+    return err("DSL_SCHEMA_INVALID", `alignment inválido: ${b.alignment}`, `${p}.alignment`, "Use center ou start");
+  if (b.density !== undefined && !DENSITY.has(b.density))
+    return err("DSL_SCHEMA_INVALID", `density inválida: ${b.density}`, `${p}.density`, "Use compact, comfortable ou spacious");
+  if (b.span !== undefined && (typeof b.span !== "number" || !Number.isInteger(b.span) || b.span < 1 || b.span > 4))
+    return err("DSL_SCHEMA_INVALID", "span deve ser inteiro de 1 a 4", `${p}.span`, "span ocupa N colunas do grid da composição");
+  if (b.distribution !== undefined && !DISTRIBUTION.has(b.distribution))
+    return err("DSL_SCHEMA_INVALID", `distribution inválida: ${b.distribution}`, `${p}.distribution`, "Use layered (camadas por profundidade) ou cluster (agrupa por nodes[].group)");
+  return null;
 }
 
 function checkBlock(b: any, p: string, seen: Set<string>): { ok: true } | { ok: false; error: CanvasError } {
@@ -20,6 +46,8 @@ function checkBlock(b: any, p: string, seen: Set<string>): { ok: true } | { ok: 
   seen.add(b.id);
   if (!BLOCK_TYPES.has(b.type))
     return { ok: false, error: err("DSL_SCHEMA_INVALID", `tipo desconhecido: ${b.type}`, `${p}.type`, `Tipos válidos: ${[...BLOCK_TYPES].join(", ")}`) };
+  const comp = checkComposition(b, p);
+  if (comp) return { ok: false, error: comp };
   if (b.type === "diagram") {
     const r = validateDiagram(b, p);
     if (!r.ok) return r as any;
@@ -73,6 +101,8 @@ export function validateDSL(input: unknown): { ok: true; dsl: CanvasDSL } | { ok
         return { ok: false, error: err("DSL_SCHEMA_INVALID", "seção.id obrigatório, alfanumérico curto", `${p}.id`, "Use ids estáveis ex: 'overview'") };
       if (seenS.has(sec.id)) return { ok: false, error: err("DSL_SCHEMA_INVALID", `seção.id duplicado: ${sec.id}`, `${p}.id`, "Renomeie para id único") };
       seenS.add(sec.id);
+      const scomp = checkComposition(sec, p);
+      if (scomp) return { ok: false, error: scomp };
       if (!Array.isArray(sec.blocks))
         return { ok: false, error: err("DSL_SCHEMA_INVALID", "seção.blocks deve ser array", `${p}.blocks`, "Inclua ao menos 1 bloco na seção") };
       for (let i = 0; i < sec.blocks.length; i++) {
@@ -92,9 +122,12 @@ function validateDiagram(b: any, p: string) {
   if (nodes.length > MAX_NODES) return { ok: false, error: err("LIMIT_EXCEEDED", `máximo ${MAX_NODES} nós`, `${p}.nodes`, "Agregue serviços em grupos") };
   if (edges.length > MAX_EDGES) return { ok: false, error: err("LIMIT_EXCEEDED", `máximo ${MAX_EDGES} arestas`, `${p}.edges`, "Agregue fluxos") };
   const ids = new Set(nodes.map((n: any) => n?.id));
-  for (const n of nodes) {
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
     if (!n || typeof n.id !== "string" || typeof n.label !== "string")
       return { ok: false, error: err("DSL_SCHEMA_INVALID", "cada node exige {id,label}", `${p}.nodes`, "Ex: {id:'api',label:'API',kind:'service'}") };
+    if (n.importance !== undefined && !IMPORTANCE.has(n.importance))
+      return { ok: false, error: err("DSL_SCHEMA_INVALID", `node.importance inválido: ${n.importance}`, `${p}.nodes[${i}].importance`, "Use primary (destaque), secondary ou supporting") };
   }
   for (let i = 0; i < edges.length; i++) {
     const e = edges[i];

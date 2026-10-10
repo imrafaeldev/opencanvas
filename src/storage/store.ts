@@ -1,20 +1,29 @@
 // Storage global em arquivos JSON — fonte de verdade, escrita atômica, revisões, manifest reconstruível.
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { CanvasDoc, CanvasDSL, AgentId } from "../core/types.js";
 import { validateDSL } from "../dsl/validate.js";
 import { canvasId, slugify } from "../projects/identity.js";
 
 export interface Paths { base: string; data: string; projectsFile: string; }
+/** Home do usuário respeitando overrides de teste (HOME) e Windows (USERPROFILE).
+ *  os.homedir() ignora HOME no Windows, o que quebra isolamento de testes e
+ *  diverge do restante da CLI — por isso a ordem é: HOME > USERPROFILE > os.homedir(). */
+export function homeDir(): string {
+  const h = process.env.HOME || process.env.USERPROFILE || os.homedir();
+  return h && h !== "~" ? h : os.homedir();
+}
 export function pathsFor(baseDir: string): Paths {
   return { base: baseDir, data: path.join(baseDir, "data", "projects"), projectsFile: path.join(baseDir, "projects.json") };
 }
 export function defaultBaseDir(): string {
-  const xdgData = process.env.XDG_DATA_HOME || path.join(process.env.HOME || "~", ".local", "share");
-  const cfg = process.env.OPENCANVAS_HOME || path.join(process.env.HOME || "~", ".config", "opencanvas");
-  // Spec conceitual usa ~/.config/opencanvas; respeita XDG dividindo config vs data:
-  // config.json fica na base; dados em data/projects (dentro da base por simplicidade portátil).
-  return process.env.OPENCANVAS_HOME ?? cfg;
+  if (process.env.OPENCANVAS_HOME) return process.env.OPENCANVAS_HOME;
+  // Topologia lógica única (~/.config/opencanvas) em Linux/macOS/Windows:
+  // funciona no Windows via C:\Users\<user>\.config\opencanvas sem exigir
+  // APPDATA, mantendo migração legada e docs idênticos entre SOs.
+  // Não usar process.env.HOME direto: ausente no Windows cmd/PowerShell.
+  return path.join(homeDir(), ".config", "opencanvas");
 }
 
 function ensureDir(d: string) { fs.mkdirSync(d, { recursive: true }); }
@@ -29,7 +38,7 @@ function atomicWrite(f: string, data: string) {
 }
 
 export interface CreateInput { projectId: string; projectRoot: string; projectName: string; title: string; description?: string; dsl: unknown; slug?: string; agent?: AgentId; }
-export interface UpdateInput { projectId: string; canvasIdOrSlug: string; expectedRevision: number; patch: { title?: string; description?: string; slug?: string; blocks?: CanvasDSL["blocks"] }; agent?: AgentId; }
+export interface UpdateInput { projectId: string; canvasIdOrSlug: string; expectedRevision: number; patch: { title?: string; description?: string; slug?: string; blocks?: CanvasDSL["blocks"]; sections?: CanvasDSL["sections"] }; agent?: AgentId; }
 
 export class Store {
   constructor(private base: string) { ensureDir(this.base); ensureDir(pathsFor(base).data); }
@@ -129,8 +138,13 @@ export class Store {
       if (this.findFile(input.projectId, s)) return { ok: false as const, error: { code: "SLUG_CONFLICT" as const, message: `Slug em uso: ${s}`, hint: "Escolha outro slug" } };
       next.slug = s;
     }
-    if (input.patch.blocks) {
-      const v = validateDSL({ ...cur.doc.dsl, title: next.title, blocks: input.patch.blocks });
+    if (input.patch.blocks || input.patch.sections !== undefined) {
+      // `sections` também é patchável: sem isso, um canvas criado com seções
+      // (formato recomendado pela skill) não pode evoluir via canvas_update.
+      const nextDsl: any = { ...cur.doc.dsl, title: next.title };
+      if (input.patch.blocks) nextDsl.blocks = input.patch.blocks;
+      if (input.patch.sections !== undefined) nextDsl.sections = input.patch.sections;
+      const v = validateDSL(nextDsl);
       if (!v.ok) return { ok: false as const, error: v.error };
       next.dsl = v.dsl;
     } else if (input.patch.title) {

@@ -10,8 +10,13 @@ const CWD = z.string().optional().describe("Subdiretório do workspace (padrão:
 async function openBrowser(url: string) {
   try {
     const { exec } = await import("node:child_process");
-    const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-    exec(`${cmd} "${url}"`, (e) => { if (e) console.error("[opencanvas] browser:", e.message); });
+    // Windows: `start` é builtin do cmd e o primeiro argumento entre aspas vira
+    // título da janela — sem o `""` vazio a URL nunca abre.
+    const cmd =
+      process.platform === "darwin" ? `open "${url}"` :
+      process.platform === "win32" ? `cmd /c start "" "${url}"` :
+      `xdg-open "${url}"`;
+    exec(cmd, (e) => { if (e) console.error("[opencanvas] browser:", e.message); });
   } catch { /* headless: URL basta */ }
 }
 

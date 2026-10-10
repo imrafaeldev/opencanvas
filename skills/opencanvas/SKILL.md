@@ -15,17 +15,25 @@ Use o OpenCanvas quando o usuário pedir explicação visual, arquitetura, fluxo
 ## Passo 2 — planejamento visual (antes da DSL)
 - Mensagem central em 1 frase. Máximo 3–5 ideias por seção.
 - Distribua assuntos complexos em **seções progressivas** (`sections: [{id, title, lead, blocks}]`, 1 a N seções — nunca comprima tudo numa viewport).
-- Escolha o layout pelo assunto, não pelo gosto:
-  - relações/dependências → `architecture` + `diagram`
-  - ordem temporal/passos → `timeline` / `steps` / `sequence` / `step-cards` / `chain`
-  - alternativas → `comparison` / `compare`
-  - execução/código → `code-walkthrough` + `code` / `payload`
-  - números/estado → `dashboard` + `metric`/`chart`
-  - explicação geral → `explanation` / `mixed`
-  - validação com armazenamentos → `split` (diagrama hub + painéis + `outcome`)
-  - princípios + erros → `security` (painéis lado a lado) + `takeaway`
-- Blocos editoriais: `hero step-cards split compare chain features takeaway payload security` (ícones: `user shield db lock flow code book form server check gear stack key refresh alert clock ban bars light`).
+- Escolha o layout pelo assunto, não pelo gosto. Prefira os **tipos especializados** — eles escolhem a composição certa:
+  - `overview` — entrada editorial: lead + grade de conceitos.
+  - `process-flow` — sequência horizontal (passos, funil, pipeline).
+  - `architecture` — diagrama como elemento principal; aceita `panels` laterais. Com 5+ nós o renderer empilha em largura total.
+  - `technical` — explicação conceitual com medida de leitura controlada.
+  - `code-walkthrough` — código à esquerda + anotações encadeadas à direita.
+  - `timeline` — linha do tempo.
+  - `summary` — chaveiras + conclusão (`takeaway`).
+  - `compare` / `comparison` — alternativas lado a lado.
+  - `security` — painéis de risco com códigos de erro.
+- Blocos reutilizáveis: `step-cards`, `features`, `split`, `chain`, `takeaway`, `payload`, `diagram`.
+- **Propriedades semânticas** (substituem CSS e descrevem a intenção):
+  - `importance`: `primary` (principal) · `secondary` · `supporting` (detalhe/nota). Em `nodes[]` de diagramas, `primary` destaca o nó.
+  - `composition`: `auto` (motor escolhe) · `row` · `grid` · `stack` · `focus` · `split` · `asymmetric` (1º item ancora ~60%).
+  - `distribution` (só em `diagram`/`architecture`): `layered` · `cluster` (agrupa `nodes[].group` em colunas rotuladas).
+  - `alignment`: `center` (padrão) · `start`.
+  - `density`: `compact` · `comfortable` · `spacious`. Na seção também.
 - Prefira diagrama a parágrafo quando a relação importa. Evite cards redundantes e ícones sem significado.
+- **Não** force a quantidade: o motor de composição já equilibra linhas (nenhum card fica órfão). Só use `composition` quando a intenção for explícita.
 
 ## Passo 3 — DSL (schemaVersion 1, blocos com id estável)
 ```json

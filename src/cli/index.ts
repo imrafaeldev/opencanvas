@@ -2,13 +2,15 @@
 // CLI global: install/doctor/status/serve/open/upgrade/uninstall (+ --targets). Idempotente, com backup.
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
+import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { defaultBaseDir } from "../storage/store.js";
+import { defaultBaseDir, homeDir } from "../storage/store.js";
 import { runtimeStatus, ensureRunning } from "../runtime/supervisor.js";
 
 const ALL = ["opencode", "codex", "cursor", "claude"];
-const PKG_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "..");
+// fileURLToPath é obrigatório no Windows: new URL(...).pathname devolve
+// "/C:/..." (leading slash) e quebra path.resolve/spawn.
+const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SKILL_SRC = path.join(PKG_ROOT, "skills", "opencanvas", "SKILL.md");
 const args = process.argv.slice(2);
 const cmd = args.find(a => !a.startsWith("-")) || "help";
@@ -17,7 +19,9 @@ const TARGETS = ti >= 0
   ? (args[ti].includes("=") ? args[ti].split("=").slice(1).join("=") : args[ti + 1] || "").split(",").map(s => s.trim()).filter(Boolean)
   : ALL;
 for (const t of TARGETS) if (!ALL.includes(t)) { console.error(`target desconhecido: ${t} (use ${ALL.join(",")})`); process.exit(1); }
-const HOME = os.homedir();
+// homeDir() respeita HOME (isolamento de testes) + USERPROFILE (Windows) + os.homedir().
+// Usar os.homedir() direto quebra `HOME=<tmp>` nos testes no Windows.
+const HOME = homeDir();
 const BASE = process.env.OPENCANVAS_HOME || defaultBaseDir();
 
 function backup(f: string) {
@@ -29,6 +33,21 @@ function writeText(f: string, s: string) { fs.mkdirSync(path.dirname(f), { recur
 function stripJsonc(s: string) { return s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/.*$/gm, "$1"); }
 function mcpCmd(agent: string): { command: string; args: string[]; env: Record<string, string> } {
   return { command: process.execPath, args: [path.join(PKG_ROOT, "dist", "mcp", "server.js")], env: { OPENCANVAS_AGENT: agent } };
+}
+/** Escapa string para TOML basic string: backslash e aspas. Sem isso,
+ *  `C:\Program Files\...` vira sequência de escape inválida no config do Codex. */
+function tomlString(s: string): string {
+  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+function openBrowserUrl(url: string) {
+  // Windows: `start` é builtin do cmd e exige título vazio antes da URL;
+  // `start "http://..."` trata a URL como título e não abre nada.
+  const cmd =
+    process.platform === "darwin" ? `open "${url}"` :
+    process.platform === "win32" ? `cmd /c start "" "${url}"` :
+    `xdg-open "${url}"`;
+  import("node:child_process").then(({ exec }) =>
+    exec(cmd, (e) => { if (e) console.error("[opencanvas] browser:", e.message); }));
 }
 
 // ---------- adapters ----------
@@ -64,7 +83,7 @@ function installMcpFile(agent: string): string[] {
     if (cur.includes("[mcp_servers.opencanvas]")) logs.push("codex mcp já registrado");
     else {
       backup(f);
-      fs.appendFileSync(f, `\n[mcp_servers.opencanvas]\ncommand = "${entry.command}"\nargs = ["${entry.args[0]}"]\nstartup_timeout_sec = 30.0\n\n[mcp_servers.opencanvas.env]\nOPENCANVAS_AGENT = "codex"\n`);
+      fs.appendFileSync(f, `\n[mcp_servers.opencanvas]\ncommand = ${tomlString(entry.command)}\nargs = [${tomlString(entry.args[0])}]\nstartup_timeout_sec = 30.0\n\n[mcp_servers.opencanvas.env]\nOPENCANVAS_AGENT = "codex"\n`);
       logs.push("codex mcp registrado em ~/.codex/config.toml");
     }
     const s = path.join(HOME, ".codex", "skills", "opencanvas", "SKILL.md");
@@ -135,8 +154,7 @@ async function main() {
     const rt = await ensureRunning(BASE);
     const url = `http://127.0.0.1:${rt.port}/`;
     console.log(url);
-    const { exec } = await import("node:child_process");
-    exec(`${process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open"} "${url}"`);
+    openBrowserUrl(url);
   } else if (cmd === "upgrade") {
     console.log("[opencanvas] upgrade: dados preservados em", BASE);
     for (const t of TARGETS) { const logs = t === "opencode" ? installOpencode() : installMcpFile(t); logs.forEach(l => console.log(` [${t}] ${l}`)); }

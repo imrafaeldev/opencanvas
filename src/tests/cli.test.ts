@@ -11,7 +11,9 @@ describe("CLI", () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "oc-home-"));
     const base = fs.mkdtempSync(path.join(os.tmpdir(), "oc-base-"));
     const cli = path.resolve("dist/cli/index.js");
-    const env = { ...process.env, HOME: home, OPENCANVAS_HOME: base };
+    // HOME isolado no Unix; USERPROFILE no Windows (os.homedir ignora HOME lá).
+    // homeDir() prefere HOME, mas fixamos ambos para garantir isolamento total.
+    const env = { ...process.env, HOME: home, USERPROFILE: home, OPENCANVAS_HOME: base };
     const out1 = execFileSync(process.execPath, [cli, "install", "--targets=opencode,codex"], { env, encoding: "utf8" });
     assert.match(out1, /OK/);
     const out2 = execFileSync(process.execPath, [cli, "install", "--targets=opencode,codex"], { env, encoding: "utf8" });

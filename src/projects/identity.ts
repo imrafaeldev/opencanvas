@@ -10,12 +10,22 @@ export function canonicalPath(p: string): string {
   let r = p;
   try { r = fs.realpathSync(r); } catch { r = path.resolve(r); }
   r = path.normalize(r);
-  if (process.platform === "win32") r = r.toLowerCase();
+  if (process.platform === "win32") {
+    // Drive letter maiúscula + minúsculas: mesmo caminho com case distinto
+    // (C:\Proj vs c:\proj) deve gerar o mesmo projectId. Separadores já
+    // normalizados pelo path.normalize; realpath resolve 8.3/short names e junctions.
+    r = r.replace(/^([a-z]):/i, (_, d: string) => `${d.toUpperCase()}:`).toLowerCase();
+    r = r.replace(/[\\/]+$/, "");
+  } else {
+    r = r.replace(/\/+$/, "") || "/";
+  }
   return r;
 }
 
 export function gitRootOf(cwd: string): string | null {
   try {
+    // stdio pipe evita poluir o host MCP. Saída pode vir com CRLF ou, via
+    // Git Bash, com forward slashes — trim + canonicalPath absorvem ambos.
     const out = execSync("git rev-parse --show-toplevel", { cwd, stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
     return out ? canonicalPath(out) : null;
   } catch { return null; }

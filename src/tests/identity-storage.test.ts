@@ -70,6 +70,41 @@ describe("storage", () => {
     assert.equal(del.ok, true);
     assert.equal(s.list(proj.projectId).length, 1);
   });
+  it("patch de sections evolui o canvas preservando o restante", () => {
+    const s = new Store(base);
+    const proj: any = resolveProject(work);
+    const dsl = { schemaVersion: 1, title: "T", blocks: [{ id: "a", type: "text", text: "oi" }] };
+    const c: any = s.create({ projectId: proj.projectId, projectRoot: proj.root, projectName: "w", title: "T", dsl, agent: "opencode" });
+    const withSections: any = s.update({
+      projectId: proj.projectId, canvasIdOrSlug: c.doc.slug, expectedRevision: 1,
+      patch: { sections: [{ id: "s1", title: "S1", blocks: [{ id: "h", type: "step-cards", items: [] }] }] }, agent: "codex",
+    });
+    assert.equal(withSections.ok, true);
+    assert.equal(withSections.doc.dsl.sections.length, 1);
+    // sections vazio é inválido por contrato: para voltar ao layout de blocos
+    // o patch omite o campo, preservando o restante do documento.
+    const empty: any = s.update({
+      projectId: proj.projectId, canvasIdOrSlug: c.doc.slug, expectedRevision: 2, patch: { sections: [] },
+    });
+    assert.equal(empty.ok, false);
+    assert.match(empty.error.message, /sections/);
+    // bloco original segue intacto após a tentativa recusada
+    assert.equal((s.get(proj.projectId, c.doc.slug) as any).doc.dsl.sections.length, 1);
+  });
+  it("sections inválido é rejeitado sem gravar", () => {
+    const s = new Store(base);
+    const proj: any = resolveProject(work);
+    const dsl = { schemaVersion: 1, title: "T", blocks: [{ id: "a", type: "text", text: "oi" }] };
+    const c: any = s.create({ projectId: proj.projectId, projectRoot: proj.root, projectName: "w", title: "T", dsl });
+    const bad: any = s.update({
+      projectId: proj.projectId, canvasIdOrSlug: c.doc.slug, expectedRevision: 1,
+      patch: { sections: [{ id: "s1", title: "S", blocks: [{ id: "x", type: "inexistente" } as any] }] },
+    });
+    assert.equal(bad.ok, false);
+    assert.equal(bad.error.code, "DSL_SCHEMA_INVALID");
+    // documento intacto: revisão não avançou
+    assert.equal((s.get(proj.projectId, c.doc.slug) as any).doc.revision, 1);
+  });
   it("DSL inválida não persiste nada", () => {
     const s = new Store(base);
     const proj: any = resolveProject(work);

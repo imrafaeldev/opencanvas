@@ -42,4 +42,81 @@ describe("DSL", () => {
     assert.equal(nov.ok, false);
   });
   it("fixture base é válida", () => assert.equal(validateDSL(good).ok, true));
+
+  it("aceita layouts especializados e propriedades semânticas", () => {
+    const r: any = validateDSL({
+      schemaVersion: 1, title: "t",
+      blocks: [{ id: "a", type: "text", text: "x" }],
+      sections: [{
+        id: "s1", alignment: "start", composition: "grid", density: "compact",
+        blocks: [
+          { id: "o", type: "overview", importance: "primary", composition: "grid", items: [] },
+          { id: "p", type: "process-flow", importance: "primary", items: [] },
+          { id: "ar", type: "architecture", importance: "primary", nodes: [{ id: "n", label: "N" }], edges: [] },
+          { id: "c", type: "code-walkthrough", code: "x", items: [] },
+          { id: "s", type: "summary", importance: "supporting", items: [] },
+          { id: "t", type: "technical", items: [] },
+          { id: "sp", type: "card", span: 2 },
+        ],
+      }],
+    });
+    assert.equal(r.ok, true, JSON.stringify(r.error));
+  });
+
+  it("rejeita propriedade semântica fora do vocabulário", () => {
+    const cases: Array<[any, RegExp]> = [
+      [{ id: "a", type: "card", importance: "enorme" }, /importance/],
+      [{ id: "a", type: "card", composition: "grid-12" }, /composition/],
+      [{ id: "a", type: "card", alignment: "justify" }, /alignment/],
+      [{ id: "a", type: "card", density: "apertado" }, /density/],
+      [{ id: "a", type: "card", span: 9 }, /span/],
+      [{ id: "a", type: "card", span: 1.5 }, /span/],
+    ];
+    for (const [block, re] of cases) {
+      const r: any = validateDSL({ schemaVersion: 1, title: "t", blocks: [block] });
+      assert.equal(r.ok, false, `deveria rejeitar ${JSON.stringify(block)}`);
+      assert.equal(r.error.code, "DSL_SCHEMA_INVALID");
+      assert.match(r.error.path, re);
+      assert.ok(r.error.hint, "erro sem hint: o agente não consegue se corrigir");
+    }
+  });
+
+  it("valida propriedades semânticas também na seção", () => {
+    const r: any = validateDSL({
+      schemaVersion: 1, title: "t", blocks: [{ id: "a", type: "text", text: "x" }],
+      sections: [{ id: "s", alignment: "middle", blocks: [] }],
+    });
+    assert.equal(r.ok, false);
+    assert.match(r.error.path, /alignment/);
+  });
+
+  it("aceita distribution cluster e importance em nodes", () => {
+    const r: any = validateDSL({
+      schemaVersion: 1, title: "t",
+      blocks: [{
+        id: "d", type: "diagram", distribution: "cluster", composition: "asymmetric",
+        nodes: [
+          { id: "a", label: "A", kind: "client", group: "edge", importance: "primary" },
+          { id: "b", label: "B", kind: "service", group: "core" },
+        ],
+        edges: [{ from: "a", to: "b", label: "pede" }],
+      }],
+    });
+    assert.equal(r.ok, true, JSON.stringify(r.error));
+  });
+
+  it("rejeita distribution e importance de node fora do vocabulário", () => {
+    const badDist: any = validateDSL({
+      schemaVersion: 1, title: "t",
+      blocks: [{ id: "d", type: "diagram", distribution: "radial", nodes: [{ id: "a", label: "A" }], edges: [] }],
+    });
+    assert.equal(badDist.ok, false);
+    assert.match(badDist.error.path, /distribution/);
+    const badImp: any = validateDSL({
+      schemaVersion: 1, title: "t",
+      blocks: [{ id: "d", type: "diagram", nodes: [{ id: "a", label: "A", importance: "enorme" }], edges: [] }],
+    });
+    assert.equal(badImp.ok, false);
+    assert.match(badImp.error.path, /importance/);
+  });
 });

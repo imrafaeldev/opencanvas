@@ -70,8 +70,12 @@ const server = http.createServer((req, res) => {
     return send(res, 200, JSON.stringify(r.doc));
   }
   // estáticos + fallback SPA (deep refresh)
-  let file = path.join(WEB, p === "/" ? "index.html" : p.slice(1).split("?")[0]);
-  if (!file.startsWith(WEB)) return send(res, 403, JSON.stringify({ error: "forbidden path" }));
+  // path.relative é o teste correto de traversal no Windows: startsWith em
+  // string crua falha por case (C: vs c:) e por separador (/ vs \).
+  const raw = p === "/" ? "index.html" : p.slice(1).split("?")[0];
+  let file = path.resolve(WEB, decodeURIComponent(raw));
+  const rel = path.relative(WEB, file);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) return send(res, 403, JSON.stringify({ error: "forbidden path" }));
   if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, "index.html");
   if (!fs.existsSync(file) && (p.startsWith("/p/") || p === "/")) file = path.join(WEB, "index.html");
   if (!fs.existsSync(file)) return send(res, 404, "not found", "text/plain");

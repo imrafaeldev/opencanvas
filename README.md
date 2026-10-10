@@ -58,4 +58,5 @@ Estrutura: `src/{core,dsl,projects,storage,runtime,mcp,cli,adapters,web,tests}/`
 
 - Registro MCP do Codex/Cursor/Claude aponta para o checkout local (`dist/mcp/server.js`); após `npm publish`, o instalador passará a apontar para o pacote global.
 - Caminhos de config de Cursor/Claude seguem o formato oficial atual e são reconfirmados pelo `doctor`; sem binário do Claude aqui, a validação dele é de contrato (config + tools), não E2E em host real.
-- Sem editor visual, sem cloud, sem Windows testado neste corte.
+- Sem editor visual, sem cloud.
+- Windows com paridade: `npm install && npm run build && npm test` passam no PowerShell/cmd (16 testes). Ver detalhes em `docs/installation.md#windows`.

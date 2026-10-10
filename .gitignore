@@ -1,4 +1,5 @@
 node_modules/
+dist/
 *.log
 .playwright-mcp/
-dist/
+__pycache__/

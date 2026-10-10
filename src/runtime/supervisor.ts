@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import net from "node:net";
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 export interface RuntimeInfo { port: number; pid: number; version: string; startedAt: string; }
 const VERSION = "0.1.0";
@@ -62,9 +63,11 @@ export async function ensureRunning(base: string, preferredPort = 4173): Promise
   fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, at: now }));
   try {
     const port = await freePort(preferredPort);
-    const serverJs = new URL("../runtime/server.js", import.meta.url);
-    const child = spawn(process.execPath, [new URL(serverJs).pathname, `--base=${base}`, `--port=${port}`],
-      { detached: true, stdio: "ignore", env: process.env });
+    // fileURLToPath obrigatório no Windows: .pathname devolve "/C:/..." e o
+    // node filho falha com MODULE_NOT_FOUND. windowsHide evita flash de console.
+    const serverPath = fileURLToPath(new URL("./server.js", import.meta.url));
+    const child = spawn(process.execPath, [serverPath, `--base=${base}`, `--port=${port}`],
+      { detached: true, stdio: "ignore", env: process.env, windowsHide: true });
     child.unref();
     for (let i = 0; i < 40; i++) {
       await new Promise(r => setTimeout(r, 250));
