@@ -59,18 +59,39 @@ function installOpencode(): string[] {
   let cfg: any = {};
   try { cfg = raw ? JSON.parse(stripJsonc(raw)) : {}; } catch { backup(jsonP); cfg = {}; }
   cfg.plugin = Array.isArray(cfg.plugin) ? cfg.plugin : [];
-  if (!cfg.plugin.includes("opencanvas")) { backup(jsonP); cfg.plugin.push("opencanvas"); writeText(jsonP, JSON.stringify(cfg, null, 2)); logs.push(`plugin registrado em ${jsonP}`); }
-  else logs.push("plugin já registrado");
+  // "opencanvas" nunca foi publicado no npm (404) — entrada quebra o Bun install
+  // e deixa canvas_* indisponível. Plugin agora é arquivo local em plugins/.
+  if (cfg.plugin.includes("opencanvas")) {
+    backup(jsonP);
+    cfg.plugin = cfg.plugin.filter((p: unknown) => p !== "opencanvas");
+    writeText(jsonP, JSON.stringify(cfg, null, 2));
+    logs.push("entrada npm quebrada 'opencanvas' removida de plugin");
+  } else logs.push("sem entrada npm quebrada");
+  const distPlugin = path.join(PKG_ROOT, "dist", "adapters", "opencode", "plugin.js");
+  const loaderP = path.join(cfgDir, "plugins", "opencanvas.js");
+  const esc = distPlugin.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  const loader = `// auto-gerado por \`opencanvas install\` — não edite (sobrescrito no upgrade).\nexport * from "${esc}";\nimport OpencanvasPlugin from "${esc}";\nexport default OpencanvasPlugin;\n`;
+  if (readText(loaderP) !== loader) {
+    if (!fs.existsSync(distPlugin)) logs.push(`AVISO: build ausente (${distPlugin}) — rode npm run build e reinstale`);
+    backup(loaderP); writeText(loaderP, loader); logs.push(`plugins/opencanvas.js instalado → ${distPlugin}`);
+  } else logs.push("plugins/opencanvas.js ok");
   const cmdMd = path.join(cfgDir, "commands", "canvas.md");
-  if (!readText(cmdMd)?.includes("opencanvas")) {
+  const cmdWant = `---\ndescription: Cria/atualiza canvases visuais OpenCanvas\n---\n\nUse a skill "opencanvas" e as tools canvas_* do plugin opencanvas para atender: $ARGUMENTS\n\nSem argumentos: liste a gallery do projeto (canvas_list) e oriente a abrir a URL (canvas_open).\n`;
+  if (readText(cmdMd) !== cmdWant) {
     backup(cmdMd);
-    writeText(cmdMd, `---\ndescription: Cria/atualiza canvases visuais OpenCanvas\n---\n\nUse a skill opencanvas (skills/canvas/SKILL.md) e as tools canvas_* do plugin opencanvas para atender: $ARGUMENTS\n\nSem argumentos: liste a gallery do projeto (canvas_list) e oriente a abrir a URL (canvas_open).\n`);
+    writeText(cmdMd, cmdWant);
     logs.push("commands/canvas.md instalado");
   } else logs.push("commands/canvas.md ok");
-  const skillMd = path.join(cfgDir, "skills", "canvas", "SKILL.md");
+  const skillMd = path.join(cfgDir, "skills", "opencanvas", "SKILL.md");
   const src = readText(SKILL_SRC) || "# opencanvas";
-  if (readText(skillMd) !== src) { backup(skillMd); writeText(skillMd, src); logs.push("skills/canvas/SKILL.md instalado"); }
+  if (readText(skillMd) !== src) { backup(skillMd); writeText(skillMd, src); logs.push("skills/opencanvas/SKILL.md instalado"); }
   else logs.push("skill ok");
+  // Migra skill legada skills/canvas (colidia com a skill "canvas" do Cursor/.agents).
+  const legacySkill = path.join(cfgDir, "skills", "canvas", "SKILL.md");
+  const legacyTxt = fs.existsSync(legacySkill) ? readText(legacySkill) : null;
+  if (legacyTxt && /opencanvas/i.test(legacyTxt)) {
+    backup(legacySkill); fs.unlinkSync(legacySkill); logs.push("skills/canvas/SKILL.md legada removida (colisão com skill canvas do Cursor)");
+  }
   return logs;
 }
 function installMcpFile(agent: string): string[] {
@@ -140,7 +161,10 @@ async function main() {
     for (const t of TARGETS) {
       if (t === "opencode") {
         const j = readText(path.join(HOME, ".config", "opencode", "opencode.jsonc")) || readText(path.join(HOME, ".config", "opencode", "opencode.json")) || "";
-        console.log(` [${t}] plugin:${/opencanvas/.test(j) ? "ok" : "AUSENTE"} skill:${fs.existsSync(path.join(HOME, ".config", "opencode", "skills", "canvas", "SKILL.md")) ? "ok" : "AUSENTE"}`);
+        const loaderOk = fs.existsSync(path.join(HOME, ".config", "opencode", "plugins", "opencanvas.js"));
+        const skillOk = fs.existsSync(path.join(HOME, ".config", "opencode", "skills", "opencanvas", "SKILL.md"));
+        const staleNpm = /"opencanvas"/.test(j);
+        console.log(` [${t}] plugin-local:${loaderOk ? "ok" : "AUSENTE"} skill:${skillOk ? "ok" : "AUSENTE"}${staleNpm ? " AVISO: entrada npm 'opencanvas' ainda presente (rode install)" : ""}`);
       } else if (t === "codex") console.log(` [codex] mcp:${(readText(path.join(HOME, ".codex", "config.toml")) || "").includes("[mcp_servers.opencanvas]") ? "ok" : "AUSENTE"}`);
       else if (t === "cursor") console.log(` [cursor] mcp:${(readText(path.join(HOME, ".cursor", "mcp.json")) || "").includes("opencanvas") ? "ok" : "AUSENTE"}`);
       else console.log(` [claude] mcp:${(readText(path.join(HOME, ".claude.json")) || "").includes("opencanvas") ? "ok" : "AUSENTE (instalado sob demanda)"}`);
@@ -163,8 +187,8 @@ async function main() {
     const purge = args.includes("--purge-data");
     for (const t of TARGETS) {
       if (t === "opencode") {
-        for (const f of [path.join(HOME, ".config", "opencode", "commands", "canvas.md")]) { if (fs.existsSync(f) && !purge) { backup(f); fs.unlinkSync(f); console.log(` removido ${f} (backup feito)`); } }
-        console.log(" [opencode] remova \"opencanvas\" de plugin manualmente se desejar (não tocamos no restante do config no uninstall)");
+        for (const f of [path.join(HOME, ".config", "opencode", "commands", "canvas.md"), path.join(HOME, ".config", "opencode", "plugins", "opencanvas.js")]) { if (fs.existsSync(f) && !purge) { backup(f); fs.unlinkSync(f); console.log(` removido ${f} (backup feito)`); } }
+        console.log(" [opencode] skill skills/opencanvas/SKILL.md preservada (remova manualmente se desejar)");
       } else console.log(` [${t}] remova a entrada 'opencanvas' do MCP de ${t} para desativar (dados preservados)`);
     }
     if (purge) { backup(BASE); fs.rmSync(BASE, { recursive: true, force: true }); console.log(" dados apagados (--purge-data)"); }

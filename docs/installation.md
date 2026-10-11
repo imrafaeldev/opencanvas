@@ -8,7 +8,7 @@ node dist/cli/index.js doctor | status | serve | open | upgrade | uninstall [--p
 
 ## O que cada alvo faz
 
-- **opencode**: adiciona `opencanvas` a `plugin` em `~/.config/opencode/opencode.json[c]` (mescla, sem apagar), instala `commands/canvas.md` e `skills/canvas/SKILL.md`.
+- **opencode**: plugin local em `~/.config/opencode/plugins/opencanvas.js` (re-exporta `dist/adapters/opencode/plugin.js`; remove a entrada npm quebrada `opencanvas`), instala `commands/canvas.md` e `skills/opencanvas/SKILL.md` (migra a legada `skills/canvas/` que colidia com a skill `canvas` do Cursor).
 - **codex**: seção `[mcp_servers.opencanvas]` em `~/.codex/config.toml` (stdio: `node <pkg>/dist/mcp/server.js`, `OPENCANVAS_AGENT=codex`) + skill.
 - **cursor**: entrada `opencanvas` em `~/.cursor/mcp.json` + skill.
 - **claude**: entrada `opencanvas` em `~/.claude.json` + skill.

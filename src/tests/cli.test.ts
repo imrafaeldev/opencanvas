@@ -17,9 +17,13 @@ describe("CLI", () => {
     const out1 = execFileSync(process.execPath, [cli, "install", "--targets=opencode,codex"], { env, encoding: "utf8" });
     assert.match(out1, /OK/);
     const out2 = execFileSync(process.execPath, [cli, "install", "--targets=opencode,codex"], { env, encoding: "utf8" });
-    assert.match(out2, /já registrado|ok/);
-    const plugins = JSON.parse(fs.readFileSync(path.join(home, ".config", "opencode", "opencode.json"), "utf8"));
-    assert.equal(plugins.plugin.filter((p: string) => p === "opencanvas").length, 1);
+    assert.match(out2, /ok/);
+    const cfgRaw = fs.existsSync(path.join(home, ".config", "opencode", "opencode.json")) ? fs.readFileSync(path.join(home, ".config", "opencode", "opencode.json"), "utf8") : "{}";
+    const cfg = JSON.parse(cfgRaw);
+    // Sem entrada npm quebrada "opencanvas" (404): plugin é arquivo local.
+    assert.equal((cfg.plugin || []).filter((p: string) => p === "opencanvas").length, 0);
+    assert.ok(fs.existsSync(path.join(home, ".config", "opencode", "plugins", "opencanvas.js")));
+    assert.ok(fs.existsSync(path.join(home, ".config", "opencode", "skills", "opencanvas", "SKILL.md")));
     const doc = execFileSync(process.execPath, [cli, "doctor"], { env, encoding: "utf8" });
     assert.match(doc, /runtime/);
     // uninstall preserva dados por padrão

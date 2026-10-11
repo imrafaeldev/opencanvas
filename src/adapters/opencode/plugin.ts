@@ -1,17 +1,27 @@
-// Adapter OpenCode (P0 principal) — wrapper fino sobre o Core. Sem lógica de negócio duplicada.
-import { z } from "zod";
+// Adapter OpenCode V2 — wrapper fino sobre o Core. Sem lógica de negócio duplicada.
+import { Plugin } from "@opencode/plugin";
 import { opCreate, opGet, opUpdate, opList, opDelete, opOpen, opProject } from "../../service.js";
 
-function cwdOf(ctx: any): string | undefined {
-  return ctx?.worktree || ctx?.directory || ctx?.cwd || process.cwd();
+type Args = Record<string, any>;
+type ToolResult = { content: string };
+
+const cwdProperty = {
+  type: "string",
+  description: "Diretório do workspace (padrão: projeto atual do OpenCode)",
+};
+
+function objectInput(properties: Record<string, unknown>, required: string[] = []) {
+  return {
+    type: "object",
+    properties,
+    required,
+    additionalProperties: false,
+  };
 }
-const CWD = z.string().optional().describe("Subdiretório do workspace (padrão: worktree da sessão)");
 
 async function openBrowser(url: string) {
   try {
     const { exec } = await import("node:child_process");
-    // Windows: `start` é builtin do cmd e o primeiro argumento entre aspas vira
-    // título da janela — sem o `""` vazio a URL nunca abre.
     const cmd =
       process.platform === "darwin" ? `open "${url}"` :
       process.platform === "win32" ? `cmd /c start "" "${url}"` :
@@ -20,56 +30,106 @@ async function openBrowser(url: string) {
   } catch { /* headless: URL basta */ }
 }
 
-export const canvasTools = {
-  canvas_create: {
-    description: "Cria um canvas visual OpenCanvas a partir de DSL validada. Retorna URL do navegador.",
-    parameters: z.object({ title: z.string(), description: z.string().optional(), dsl: z.any(), slug: z.string().optional(), cwd: CWD }),
-    async execute(args: any, ctx: any) {
-      const r = await opCreate({ agent: "opencode", cwd: cwdOf(ctx) }, { ...args, cwd: args.cwd || cwdOf(ctx) });
-      if ((r as any).ok && (r as any).url) openBrowser((r as any).url);
-      return JSON.stringify(r);
-    },
-  },
-  canvas_get: {
-    description: "Carrega canvas por id/slug no projeto atual.",
-    parameters: z.object({ idOrSlug: z.string(), cwd: CWD }),
-    async execute(args: any, ctx: any) { return JSON.stringify(await opGet({ agent: "opencode", cwd: cwdOf(ctx) }, { ...args, cwd: args.cwd || cwdOf(ctx) })); },
-  },
-  canvas_update: {
-    description: "Patch parcial com expectedRevision. Preserva blocos não tocados.",
-    parameters: z.object({ idOrSlug: z.string(), expectedRevision: z.number(), patch: z.any(), cwd: CWD }),
-    async execute(args: any, ctx: any) {
-      const r = await opUpdate({ agent: "opencode", cwd: cwdOf(ctx) }, { ...args, cwd: args.cwd || cwdOf(ctx) });
-      return JSON.stringify(r);
-    },
-  },
-  canvas_list: {
-    description: "Lista canvases do projeto atual.",
-    parameters: z.object({ cwd: CWD }),
-    async execute(args: any, ctx: any) { return JSON.stringify(await opList({ agent: "opencode", cwd: cwdOf(ctx) }, { cwd: args.cwd || cwdOf(ctx) })); },
-  },
-  canvas_delete: {
-    description: "Exclui canvas (soft-delete). Exija confirmação explícita do usuário.",
-    parameters: z.object({ idOrSlug: z.string(), cwd: CWD }),
-    async execute(args: any, ctx: any) { return JSON.stringify(await opDelete({ agent: "opencode", cwd: cwdOf(ctx) }, { ...args, cwd: args.cwd || cwdOf(ctx) })); },
-  },
-  canvas_open: {
-    description: "Garante runtime global e retorna/abre URL (gallery ou canvas).",
-    parameters: z.object({ idOrSlug: z.string().optional(), cwd: CWD }),
-    async execute(args: any, ctx: any) {
-      const r: any = await opOpen({ agent: "opencode", cwd: cwdOf(ctx) }, { ...args, cwd: args.cwd || cwdOf(ctx) });
-      if (r?.ok && r.url) openBrowser(r.url);
-      return JSON.stringify(r);
-    },
-  },
-  canvas_get_project: {
-    description: "Resolve identidade compartilhada do projeto atual.",
-    parameters: z.object({ cwd: CWD }),
-    async execute(args: any, ctx: any) { return JSON.stringify(await opProject({ agent: "opencode" }, args.cwd || cwdOf(ctx))); },
-  },
-};
-
-// Formato de plugin OpenCode (@opencode-ai/plugin). Se a API evoluir, as tools acima continuam válidas.
-export default async function plugin() {
-  return { tool: canvasTools };
+function result(value: unknown): ToolResult {
+  return { content: typeof value === "string" ? value : JSON.stringify(value) };
 }
+
+export default Plugin.define({
+  id: "opencanvas",
+  async setup(ctx) {
+    const projectCwd = ctx.location.directory;
+
+    await ctx.tool.transform((editor) => {
+      editor.add({
+        name: "canvas_create",
+        description: "Cria um canvas visual OpenCanvas a partir de DSL validada. Retorna URL do navegador.",
+        input: objectInput({
+          title: { type: "string" },
+          description: { type: "string" },
+          dsl: { type: "object", additionalProperties: true },
+          slug: { type: "string" },
+          cwd: cwdProperty,
+        }, ["title", "dsl"]),
+        async execute(input: unknown) {
+          const args = input as Args;
+          const cwd = args.cwd || projectCwd;
+          const r = await opCreate({ agent: "opencode", cwd }, { ...args, cwd } as any);
+          if (r.ok && r.url) await openBrowser(r.url);
+          return result(r);
+        },
+      });
+
+      editor.add({
+        name: "canvas_get",
+        description: "Carrega canvas por id/slug no projeto atual.",
+        input: objectInput({ idOrSlug: { type: "string" }, cwd: cwdProperty }, ["idOrSlug"]),
+        async execute(input: unknown) {
+          const args = input as Args;
+          const cwd = args.cwd || projectCwd;
+          return result(await opGet({ agent: "opencode", cwd }, { ...args, cwd } as any));
+        },
+      });
+
+      editor.add({
+        name: "canvas_update",
+        description: "Patch parcial com expectedRevision. Preserva blocos não tocados.",
+        input: objectInput({
+          idOrSlug: { type: "string" },
+          expectedRevision: { type: "number" },
+          patch: { type: "object", additionalProperties: true },
+          cwd: cwdProperty,
+        }, ["idOrSlug", "expectedRevision", "patch"]),
+        async execute(input: unknown) {
+          const args = input as Args;
+          const cwd = args.cwd || projectCwd;
+          return result(await opUpdate({ agent: "opencode", cwd }, { ...args, cwd } as any));
+        },
+      });
+
+      editor.add({
+        name: "canvas_list",
+        description: "Lista canvases do projeto atual.",
+        input: objectInput({ cwd: cwdProperty }),
+        async execute(input: unknown) {
+          const args = input as Args;
+          const cwd = args.cwd || projectCwd;
+          return result(await opList({ agent: "opencode", cwd }, { cwd }));
+        },
+      });
+
+      editor.add({
+        name: "canvas_delete",
+        description: "Exclui canvas (soft-delete). Exija confirmação explícita do usuário.",
+        input: objectInput({ idOrSlug: { type: "string" }, cwd: cwdProperty }, ["idOrSlug"]),
+        async execute(input: unknown) {
+          const args = input as Args;
+          const cwd = args.cwd || projectCwd;
+          return result(await opDelete({ agent: "opencode", cwd }, { ...args, cwd } as any));
+        },
+      });
+
+      editor.add({
+        name: "canvas_open",
+        description: "Garante runtime global e retorna/abre URL (gallery ou canvas).",
+        input: objectInput({ idOrSlug: { type: "string" }, cwd: cwdProperty }),
+        async execute(input: unknown) {
+          const args = input as Args;
+          const cwd = args.cwd || projectCwd;
+          const r = await opOpen({ agent: "opencode", cwd }, { ...args, cwd } as any);
+          if (r.ok && r.url) await openBrowser(r.url);
+          return result(r);
+        },
+      });
+
+      editor.add({
+        name: "canvas_get_project",
+        description: "Resolve identidade compartilhada do projeto atual.",
+        input: objectInput({ cwd: cwdProperty }),
+        async execute(input: unknown) {
+          const args = input as Args;
+          return result(await opProject({ agent: "opencode" }, args.cwd || projectCwd));
+        },
+      });
+    });
+  },
+});
