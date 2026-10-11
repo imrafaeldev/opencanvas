@@ -18,7 +18,7 @@ export function Layout({ dsl }: { dsl: any }) {
         const showKickerTitle = !hero && (s.kicker || s.title);
         const showLead = !!s.lead && !hero?.text;
         return (
-          <section key={s.id || i} className="slide" id={s.id} aria-labelledby={`title-${s.id}`}>
+          <section key={s.id || i} className={i === 0 ? "slide slide-cover" : "slide"} id={s.id} aria-labelledby={`title-${s.id}`}>
             <div className="slide-decor" aria-hidden="true" />
             <main className="canvas">
               {/* identidade uma única vez, discreta; não em cada seção */}
@@ -54,7 +54,7 @@ function renderTitle(title: string, highlight?: string) {
 function LegacyDoc({ dsl }: { dsl: any }) {
   const blocks = dsl?.blocks || [];
   return (
-    <section className="slide">
+    <section className="slide slide-cover">
       <div className="slide-decor" aria-hidden="true" />
       <main className="canvas">
         <div className="brand-trusted"><span className="brand-mark" aria-hidden="true" />OpenCanvas</div>

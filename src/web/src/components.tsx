@@ -34,16 +34,68 @@ export function Icon({ name, cls = "icon" }: { name?: string; cls?: string }) {
   return <svg className={cls} aria-hidden="true"><use href={`#${id}`} /></svg>;
 }
 
-function CopyBtn({ text }: { text: string }) {
-  const [ok, setOk] = useState(false);
-  return <button className="btn" onClick={() => { navigator.clipboard?.writeText(text).catch(() => {}); setOk(true); setTimeout(() => setOk(false), 1200); }}>{ok ? "Copiado" : "Copiar"}</button>;
+const CODE_COLLAPSE_LINES = 14;
+const CODE_COLLAPSE_CHARS = 1400;
+const CODE_KEYWORDS = new Set([
+  "const", "let", "var", "function", "return", "if", "else", "for", "of", "in",
+  "while", "await", "async", "import", "from", "export", "default", "new", "try",
+  "catch", "finally", "throw", "type", "interface", "extends", "true", "false",
+  "null", "undefined", "this", "class", "switch", "case", "break", "continue",
+]);
+
+/** Highlight genérico sem dependências: comentários, strings, números,
+ *  keywords e chamadas. Preserva indentação e quebras (texto puro em <pre>). */
+function highlight(code: string): React.ReactNode[] {
+  const re = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*)|('(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`)|\b(\d[\d_]*(?:\.\d+)?)\b|\b([A-Za-z_$][\w$]*)/g;
+  const out: React.ReactNode[] = [];
+  let last = 0, k = 0, m: RegExpExecArray | null;
+  const push = (text: string, cls: string) => {
+    if (text) out.push(<span key={k++} className={cls}>{text}</span>);
+  };
+  while ((m = re.exec(code))) {
+    if (m.index > last) push(code.slice(last, m.index), "tok-plain");
+    const [tok, com, str, num, word] = m;
+    if (com) push(tok, "tok-com");
+    else if (str) push(tok, "tok-str");
+    else if (num) push(tok, "tok-num");
+    else if (word && CODE_KEYWORDS.has(word)) push(tok, "tok-key");
+    else if (word && code[m.index + tok.length] === "(") push(tok, "tok-fn");
+    else push(tok, "tok-plain");
+    last = m.index + tok.length;
+  }
+  if (last < code.length) push(code.slice(last), "tok-plain");
+  return out;
 }
 
-export function CodeView({ code }: { code: string; language?: string }) {
+export function CodeView({ code, language, file }: { code: string; language?: string; file?: string }) {
   const pretty = (() => {
     try { return JSON.stringify(JSON.parse(code), null, 2); } catch { return code; }
   })();
-  return <pre className="px-code"><code>{pretty}</code></pre>;
+  const lines = pretty.split("\n").length;
+  const long = lines > CODE_COLLAPSE_LINES || pretty.length > CODE_COLLAPSE_CHARS;
+  const [open, setOpen] = useState(!long);
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard?.writeText(pretty).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
+  };
+  return (
+    <div className="code-frame" data-collapsed={long && !open ? "1" : "0"}>
+      <div className="code-head">
+        {language && <span className="lang">{language}</span>}
+        {file && <span className="file">{file}</span>}
+        <span className="spacer" />
+        <button type="button" className="code-btn" onClick={copy}>{copied ? "Copiado" : "Copiar"}</button>
+        {long && (
+          <button type="button" className="code-btn" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+            {open ? "Recolher" : `Expandir (${lines} linhas)`}
+          </button>
+        )}
+      </div>
+      <pre className="code-body" tabIndex={long && !open ? 0 : undefined}><code>{highlight(pretty)}</code></pre>
+    </div>
+  );
 }
 
 /* ---------- blocos editoriais ---------- */
@@ -177,9 +229,107 @@ function Split({ b }: { b: any }) {
   );
 }
 
+function rowsOf(c: any): { label: string; text: string }[] {
+  const rows = c?.rows || c?.criteria || c?.tradeoffs || [];
+  if (!Array.isArray(rows)) return [];
+  return rows.map((r: any) => {
+    if (typeof r === "string") return { label: "", text: r };
+    return {
+      label: String(r.label ?? r.criterion ?? r.name ?? r[0] ?? "").trim(),
+      text: String(r.text ?? r.value ?? r.description ?? r[1] ?? ""),
+    };
+  });
+}
+
+function valueFor(c: any, criterion: string): string | undefined {
+  const row = rowsOf(c).find((r) => r.label === criterion);
+  if (row?.text) return row.text;
+  const values = c?.values;
+  if (values && !Array.isArray(values) && values[criterion] !== undefined) return String(values[criterion]);
+  const value = Array.isArray(values)
+    ? values.find((r: any) => String(r?.label ?? r?.criterion ?? "").trim() === criterion)?.value
+    : undefined;
+  return value === undefined ? undefined : String(value);
+}
+
+/**
+ * Comparação estrutural para N alternativas, sem layout hardcoded.
+ * Eixo central = critérios compartilhados (união dos labels das rows),
+ * alinhados linha a linha; linhas com valores divergentes ganham destaque.
+ * Sem critérios na DSL (ex.: listas de prós), cai para cards lado a lado com
+ * o bridge como cabeçalho de decisão — nunca decoração entre colunas.
+ */
 function Compare({ b }: { b: any }) {
-  const [left, right] = b.items || b.columns || [];
+  const alts: any[] = b.items || b.columns || [];
   const payload = b.payload;
+  const rawVerdict = b.verdict || b.conclusion || b.recommendation || b.decision;
+  const verdict = typeof rawVerdict === "string"
+    ? rawVerdict
+    : rawVerdict?.text || rawVerdict?.body;
+  const verdictTitle = b.verdictTitle || (typeof rawVerdict === "object" ? rawVerdict?.title : undefined);
+  const criteria: string[] = [];
+  (Array.isArray(b.criteria) ? b.criteria : []).forEach((r: any) => {
+    const label = String(typeof r === "string" ? r : r?.label || r?.criterion || r?.name || "").trim();
+    if (label && !criteria.includes(label)) criteria.push(label);
+  });
+  alts.forEach((c) => rowsOf(c).forEach((r) => {
+    if (r.label && r.label !== "•" && !criteria.includes(r.label)) criteria.push(r.label);
+  }));
+  const table = alts.length >= 2 && criteria.length >= 1;
+  const cols = `200px repeat(${alts.length}, minmax(0, 1fr))`;
+
+  const verdictNode = verdict ? (
+      <div className="soft-card takeaway" style={{ marginTop: "var(--gap)" }}>
+        <span className="small-icon violet"><Icon name={b.verdictIcon || "check"} /></span>
+        <div>{verdictTitle && <h3 className="block-title">{verdictTitle}</h3>}<p>{verdict}</p></div>
+    </div>
+  ) : null;
+  const payloadNode = payload ? (
+    <div className="soft-card payload">
+      <div className="payload-copy">
+        <span className="small-icon"><Icon name={payload.icon || "code"} /></span>
+        <div><h4 className="block-title">{payload.title}</h4><p>{payload.text}</p></div>
+      </div>
+      <CodeView code={payload.code || ""} />
+    </div>
+  ) : null;
+
+  if (table) {
+    return (
+      <div>
+        <div className="compare-table" role="table" aria-label={b.title || "Comparação"}>
+          <div className="compare-row compare-head-row" role="row" style={{ gridTemplateColumns: cols }}>
+            <span className="compare-crit-head" role="columnheader">
+              Critério{b.bridge && <em>{b.bridge}</em>}
+            </span>
+            {alts.map((c: any, i: number) => (
+              <span key={c?.id || i} className="compare-alt-head" role="columnheader">
+                <span className={`small-icon ${i % 2 ? "violet" : ""}`}><Icon name={c?.icon} /></span>
+                <span><strong>{c?.title}</strong>{c?.text && <small>{c.text}</small>}</span>
+              </span>
+            ))}
+          </div>
+          {criteria.map((crit) => {
+            const texts = alts.map((c) => valueFor(c, crit));
+            const diff = new Set(texts.filter(Boolean)).size > 1;
+            return (
+              <div key={crit} className={`compare-row${diff ? " diff" : ""}`} role="row" style={{ gridTemplateColumns: cols }}>
+                <span className="compare-crit" role="rowheader">{crit}</span>
+                {alts.map((c: any, i: number) => (
+                  <span key={i} className={`compare-cell${texts[i] ? "" : " missing"}`} role="cell" data-crit={crit} data-alt={c?.title || `Opção ${i + 1}`}>
+                    {texts[i] || "—"}
+                  </span>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+        {verdictNode}
+        {payloadNode}
+      </div>
+    );
+  }
+
   const card = (c: any, violet: boolean) => (
     <article className={`soft-card token-card ${violet ? "violet" : ""}`}>
       <div className="token-header">
@@ -187,28 +337,20 @@ function Compare({ b }: { b: any }) {
         <div><h3 className="block-title">{c?.title}</h3><p>{c?.text}</p></div>
       </div>
       <div className="token-rows">
-        {(c?.rows || []).map((r: any, i: number) => (
-          <div className="token-row" key={i}><span>{r.label || r[0]}</span><p>{r.text || r[1]}</p></div>
+        {rowsOf(c).map((r, i) => (
+          <div className="token-row" key={i}><span>{r.label || "•"}</span><p>{r.text}</p></div>
         ))}
       </div>
     </article>
   );
   return (
     <div>
-      <div className="compare-main">
-        {card(left, false)}
-        <div className="token-bridge">{b.bridge || "Working together"}</div>
-        {card(right, true)}
+      {b.bridge && <p className="compare-bridge-head"><span className="kicker-eyebrow">{b.bridge}</span></p>}
+      <div className="compare-cards">
+        {alts.map((c: any, i: number) => <React.Fragment key={c?.id || i}>{card(c, i % 2 === 1)}</React.Fragment>)}
       </div>
-      {payload && (
-        <div className="soft-card payload">
-          <div className="payload-copy">
-            <span className="small-icon"><Icon name={payload.icon || "code"} /></span>
-            <div><h4 className="block-title">{payload.title}</h4><p>{payload.text}</p></div>
-          </div>
-          <CodeView code={payload.code || ""} />
-        </div>
-      )}
+      {verdictNode}
+      {payloadNode}
     </div>
   );
 }
@@ -345,8 +487,8 @@ export function Block({ b, cover }: { b: any; cover?: boolean }) {
     case "code":
       return wrap(
         <div style={{ marginTop: "var(--gap)" }}>
-          <div className="meta"><span className="badge">{b.language || "code"}</span><CopyBtn text={b.code || ""} /></div>
-          <CodeView code={b.code || ""} />
+          {b.title && <h3 className="block-title" style={{ marginBottom: "var(--sp-1)" }}>{b.title}</h3>}
+          <CodeView code={b.code || ""} language={b.language || "code"} file={b.file} />
         </div>
       );
     case "metric": {
@@ -425,7 +567,11 @@ export function Block({ b, cover }: { b: any; cover?: boolean }) {
         </div>
       );
     case "comparison":
-      return <Compare b={{ items: (b.items || []).map((c: any) => ({ title: c.title, text: c.text, icon: c.icon || "flow", rows: (c.pros || c.points || []).map((p: string) => ({ label: "•", text: p })) })), bridge: b.bridge || "vs" }} />;
+      return <Compare b={{ ...b, items: (b.items || []).map((c: any) => ({
+        ...c,
+        icon: c.icon || "flow",
+        rows: c.rows || c.criteria || (c.pros || c.points || []).map((p: string) => ({ label: "•", text: p })),
+      })), bridge: b.bridge || "vs" }} />;
     case "tree":
       return <Tree nodes={b.items || b.nodes || []} />;
     case "diagram":
@@ -528,8 +674,7 @@ export function Block({ b, cover }: { b: any; cover?: boolean }) {
       return (
         <div className="compose chain-split" style={{ marginTop: "var(--sp-5)" }}>
           <div>
-            <div className="meta"><span className="badge">{b.language || "code"}</span>{b.file && <span>{b.file}</span>}<CopyBtn text={b.code || ""} /></div>
-            <CodeView code={b.code || ""} />
+            <CodeView code={b.code || ""} language={b.language || "code"} file={b.file} />
             {b.text && <p className="prose" style={{ marginTop: "var(--sp-3)" }}>{b.text}</p>}
           </div>
           <article className="soft-card violet detail-panel">

@@ -41,6 +41,7 @@ const KIND_COLOR: Record<string, string> = {
 const HL = "#F59E0B"; // cor de destaque do caminho selecionado
 
 interface Box { x: number; y: number; w: number; h: number; }
+interface GraphBounds { x: number; y: number; w: number; h: number; }
 
 /** BFS por profundidade → camadas. Ciclos não travam: nós visitados entram uma vez. */
 function layerize(nodes: any[], edges: any[]) {
@@ -85,8 +86,8 @@ function declutter(tags: Tag[]): Tag[] {
       for (let j = i + 1; j < out.length; j++) {
         const a = out[i], b = out[j];
         if (a.fixed && b.fixed) continue;
-        if (Math.abs(a.x - b.x) < (a.w + b.w) / 2 + 8 && Math.abs(a.y - b.y) < 27) {
-          const push = (27 - Math.abs(a.y - b.y)) / 2 + 2;
+        if (Math.abs(a.x - b.x) < (a.w + b.w) / 2 + 12 && Math.abs(a.y - b.y) < 31) {
+          const push = (31 - Math.abs(a.y - b.y)) / 2 + 2;
           if (a.fixed) { b.y += b.y >= a.y ? push * 2 : -push * 2; moved = true; }
           else if (b.fixed) { a.y += a.y >= b.y ? push * 2 : -push * 2; moved = true; }
           else if (a.y <= b.y) { a.y -= push; b.y += push; moved = true; }
@@ -105,6 +106,8 @@ export function Diagram({ nodes = [], edges = [], direction = "LR", emphasis, di
   const [active, setActive] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{ id: number; x: number; y: number; panX: number; panY: number } | null>(null);
 
   useLayoutEffect(() => {
     const el = hostRef.current;
@@ -133,10 +136,22 @@ export function Diagram({ nodes = [], edges = [], direction = "LR", emphasis, di
   const toggle = (id: string) => setActive((cur) => (cur === id ? null : id));
 
   const geo = useMemo(() => {
-    const pad = 20;
-    const gapCross = 30;
-    const budget = avail - pad * 2;
-    const table = byId(nodes);
+      const pad = 20;
+      const gapCross = 30;
+      const budget = avail - pad * 2;
+      const table = byId(nodes);
+      const reverse = direction === "RL" || direction === "BT";
+      const orient = (layout: any) => {
+        if (!reverse) return { ...layout, reverse: false };
+        const boxes = Object.fromEntries(Object.entries(layout.boxes).map(([id, p]: [string, any]) => [
+          id,
+          layout.horiz
+            ? { ...p, x: layout.w - p.x - p.w }
+            : { ...p, y: layout.h - p.y - p.h },
+        ]));
+        const clusters = layout.clusters?.map((c: any) => ({ ...c, x: layout.w - c.x - c.w }));
+        return { ...layout, boxes, clusters, reverse: true };
+      };
 
     // tipografia tentada do maior para o menor: a primeira que couber vence,
     // então o texto nasce legível em vez de nascer pequeno e escalar.
@@ -156,7 +171,8 @@ export function Diagram({ nodes = [], edges = [], direction = "LR", emphasis, di
           if (!order.includes(g)) order.push(g);
         });
         const g = Math.max(1, order.length);
-        const gap = 56;
+        // respiro generoso entre clusters: rótulos de aresta vivem no vão
+        const gap = 110;
         const nodeW = Math.round(Math.max(MIN_NODE_W, Math.min(MAX_NODE_W, (budget - gap * (g - 1)) / g)));
         // exige que o rótulo mais longo de cada grupo caiba; senão tenta fonte menor
         const fits = order.every((gr) =>
@@ -175,7 +191,7 @@ export function Diagram({ nodes = [], edges = [], direction = "LR", emphasis, di
           });
           clusters.push({ label: gr, x, w: nodeW });
         });
-        return { boxes, clusters, w: g * nodeW + (g - 1) * gap + pad * 2, h: H + pad * 2 + (order.length > 1 ? 34 : 0), horiz: true, fontLabel, fontSub: fontLabel - 4, cluster: true as const };
+        return orient({ boxes, clusters, w: g * nodeW + (g - 1) * gap + pad * 2, h: H + pad * 2 + (order.length > 1 ? 34 : 0), horiz: true, fontLabel, fontSub: Math.max(14, fontLabel - 3), cluster: true as const });
       }
 
       // --- layered ---
@@ -207,7 +223,7 @@ export function Diagram({ nodes = [], edges = [], direction = "LR", emphasis, di
             boxes[id] = { x, y: off + j * (nodeH + gapCross), w: widths[d], h: nodeH };
           });
         });
-        return { boxes, clusters: null, w: total + pad * 2, h: crossSpan + pad * 2, horiz: true, fontLabel, fontSub: fontLabel - 4, cluster: false as const };
+        return orient({ boxes, clusters: null, w: total + pad * 2, h: crossSpan + pad * 2, horiz: true, fontLabel, fontSub: Math.max(14, fontLabel - 3), cluster: false as const });
       }
       if (!horizPreferred && perLayer <= 3) {
         // TB pedido com poucas colunas: usa a largura pedida
@@ -221,7 +237,7 @@ export function Diagram({ nodes = [], edges = [], direction = "LR", emphasis, di
             boxes[id] = { x: off + j * (nodeW + gapCross), y: d * (nodeH + 60), w: nodeW, h: nodeH };
           });
         });
-        return { boxes, clusters: null, w: crossSpan + pad * 2, h: layerCount * nodeH + (layerCount - 1) * 60 + pad * 2, horiz: false, fontLabel, fontSub: fontLabel - 4, cluster: false as const };
+        return orient({ boxes, clusters: null, w: crossSpan + pad * 2, h: layerCount * nodeH + (layerCount - 1) * 60 + pad * 2, horiz: false, fontLabel, fontSub: Math.max(14, fontLabel - 3), cluster: false as const });
       }
       if (fontLabel > 17) continue; // tenta fonte menor antes de verticalizar
       // vertical: camadas empilham, largura uniforme generosa
@@ -235,50 +251,192 @@ export function Diagram({ nodes = [], edges = [], direction = "LR", emphasis, di
           boxes[id] = { x: off + j * (nodeWv + gapCross), y: d * (nodeHt + 60), w: nodeWv, h: nodeHt };
         });
       });
-      return { boxes, clusters: null, w: crossSpan + pad * 2, h: layerCount * nodeHt + (layerCount - 1) * 60 + pad * 2, horiz: false, fontLabel, fontSub: fontLabel - 4, cluster: false as const };
+      return orient({ boxes, clusters: null, w: crossSpan + pad * 2, h: layerCount * nodeHt + (layerCount - 1) * 60 + pad * 2, horiz: false, fontLabel, fontSub: Math.max(14, fontLabel - 3), cluster: false as const });
     }
     // fallback inalcançável na prática (o laço sempre retorna em 17)
-    return { boxes: {}, clusters: null, w: avail, h: 300, horiz: true, fontLabel: 17, fontSub: 13, cluster: false as const };
+    return orient({ boxes: {}, clusters: null, w: avail, h: 300, horiz: true, fontLabel: 17, fontSub: 14, cluster: false as const });
   }, [nodes, edges, direction, distribution, avail]);
 
-  const hasEdges = edges.some((e: any) => e.label);
-  // auto-fit com piso de legibilidade: abaixo de 0.72 de escala o diagrama
-  // rola internamente em vez de encolher o texto até ficar ilegível.
-  const fit = Math.min(1.18, avail / geo.w);
-  const legible = fit >= 0.72;
-  const renderW = legible ? undefined : Math.round(geo.w * 0.72);
-  const naturalH = (legible ? avail : renderW!) / Math.max(0.2, geo.w / Math.max(1, geo.h));
+  // Bounds derivados dos boxes efetivamente renderizados, e não de um tamanho
+  // de fixture. A folga cobre cabeçalhos de cluster, setas e labels extremos.
+  const bounds = useMemo<GraphBounds>(() => {
+    const boxes = Object.values(geo.boxes);
+    if (!boxes.length) return { x: 0, y: 0, w: geo.w, h: geo.h };
+    const minX = Math.min(...boxes.map((p) => p.x));
+    const minY = Math.min(...boxes.map((p) => p.y));
+    const maxX = Math.max(...boxes.map((p) => p.x + p.w));
+    const maxY = Math.max(...boxes.map((p) => p.y + p.h));
+    const left = Math.min(0, minX - 24);
+    const top = Math.min(0, minY - 38);
+    const right = Math.max(geo.w, maxX + 24);
+    const bottom = Math.max(geo.h, maxY + 28);
+    return { x: left, y: top, w: right - left, h: bottom - top };
+  }, [geo]);
+
+  // Auto-fit privilegia leitura: quando o grafo não cabe, mantém uma escala
+  // mínima e deixa o canvas rolar horizontalmente em vez de miniaturizar texto.
+  const contentAvail = Math.max(280, avail - 32);
+  const fit = Math.min(1.18, contentAvail / bounds.w);
+  const MIN_READABLE_SCALE = 0.84;
+  const legible = fit >= MIN_READABLE_SCALE;
+  const renderW = legible ? undefined : Math.round(bounds.w * MIN_READABLE_SCALE);
+  const baseRenderW = renderW ?? contentAvail;
+  const naturalH = baseRenderW / Math.max(0.2, bounds.w / Math.max(1, bounds.h));
   const boxH = Math.round(Math.max(emphasis === "primary" ? 340 : 280, Math.min(680, naturalH)));
+
+  const viewport = useMemo(() => {
+    const w = bounds.w / Math.max(0.75, zoom);
+    const h = bounds.h / Math.max(0.75, zoom);
+    const maxPanX = Math.max(0, (bounds.w - w) / 2);
+    const maxPanY = Math.max(0, (bounds.h - h) / 2);
+    const x = bounds.x + (bounds.w - w) / 2 + Math.max(-maxPanX, Math.min(maxPanX, pan.x));
+    const y = bounds.y + (bounds.h - h) / 2 + Math.max(-maxPanY, Math.min(maxPanY, pan.y));
+    return { x, y, w, h };
+  }, [bounds, pan, zoom]);
+
+  const resetView = () => { setZoom(1); setPan({ x: 0, y: 0 }); setActive(null); };
+  const beginPan = (e: React.PointerEvent<SVGSVGElement>) => {
+    const target = e.target as Element;
+    if (target.closest?.(".diagram-node")) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
+  };
+  const movePan = (e: React.PointerEvent<SVGSVGElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.id !== e.pointerId) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const unitsX = viewport.w / Math.max(1, rect.width);
+    const unitsY = viewport.h / Math.max(1, rect.height);
+    setPan({ x: drag.panX - (e.clientX - drag.x) * unitsX, y: drag.panY - (e.clientY - drag.y) * unitsY });
+  };
+  const endPan = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (dragRef.current?.id === e.pointerId) dragRef.current = null;
+  };
+
+  // Diagnóstico interno (contagens, camadas, auto-fit): oculto por padrão,
+  // visível só com ?debug na URL ou oc-debug=1 no localStorage.
+  const debugInfo = useMemo(() => {
+    let on = false;
+    try {
+      on = new URLSearchParams(window.location.search).has("debug")
+        || window.localStorage.getItem("oc-debug") === "1";
+    } catch { on = false; }
+    if (!on) return null;
+    const layers = geo.cluster ? "clusters" : "camadas";
+    return `diagnóstico · ${nodes.length} nós · ${edges.length} arestas · ${layers} · auto-fit ${(fit * 100).toFixed(0)}%`;
+  }, [nodes.length, edges.length, geo.cluster, fit]);
 
   const dimOf = (id: string) => (related && !related.has(id) ? 1 : 0);
   const edgeOn = (e: any) => !related || e.from === active || e.to === active;
 
-  // posições dos rótulos de aresta com descolisão (nós = obstáculos fixos)
+  // Faixas de porta: arestas paralelas saem/chegam em posições distintas da
+  // face do nó (ordenadas pela posição da outra ponta), em vez de convergirem
+  // todas no centro — elimina o feixe sobreposto sem coordenadas fixas.
+  const lanes = useMemo(() => {
+    const out = new Map<number, { lane: number; total: number }>();
+    const inn = new Map<number, { lane: number; total: number }>();
+    const group = (key: (e: any) => string, pos: (e: any) => number, store: typeof out) => {
+      const g = new Map<string, number[]>();
+      edges.forEach((e: any, i: number) => {
+        if (!geo.boxes[e.from] || !geo.boxes[e.to]) return;
+        const k = key(e);
+        if (!g.has(k)) g.set(k, []);
+        g.get(k)!.push(i);
+      });
+      g.forEach((idxs) => {
+        idxs.sort((p, q) => pos(edges[p]) - pos(edges[q]) || p - q);
+        idxs.forEach((ei, lane) => store.set(ei, { lane, total: idxs.length }));
+      });
+    };
+    if (geo.horiz) {
+      group((e) => e.from, (e) => geo.boxes[e.to].y + geo.boxes[e.to].h / 2, out);
+      group((e) => e.to, (e) => geo.boxes[e.from].y + geo.boxes[e.from].h / 2, inn);
+    } else {
+      group((e) => e.from, (e) => geo.boxes[e.to].x + geo.boxes[e.to].w / 2, out);
+      group((e) => e.to, (e) => geo.boxes[e.from].x + geo.boxes[e.from].w / 2, inn);
+    }
+    return { out, inn };
+  }, [edges, geo]);
+
+  const portAlong = (len: number, l?: { lane: number; total: number }) => {
+    if (!l || l.total <= 1) return len / 2;
+    const p = (len * (l.lane + 1)) / (l.total + 1);
+    return Math.min(len - 16, Math.max(16, p));
+  };
+
+  // Geometria de cada aresta: avanço usa bezier com portas distribuídas;
+  // retorno (destino atrás da origem) usa barramento ortogonal abaixo/ao lado,
+  // com entrada perpendicular — tangente final sempre limpa para o arrowhead.
+  // Self-loop desenha um arco acima do nó. Nós pintam por cima das linhas.
+  const paths = useMemo(() => edges.map((e: any, i: number) => {
+    const a = geo.boxes[e.from], b = geo.boxes[e.to];
+    if (!a || !b) return null;
+    if (e.from === e.to) {
+      const x1 = a.x + 40, x2 = a.x + a.w - 40, yT = a.y;
+      return { d: `M${x1},${yT} C${x1},${yT - 34} ${x2},${yT - 34} ${x2},${yT}`, lx: (x1 + x2) / 2, ly: yT - 30, ortho: false };
+    }
+    if (geo.horiz) {
+      const y1 = a.y + portAlong(a.h, lanes.out.get(i));
+      const y2 = b.y + portAlong(b.h, lanes.inn.get(i));
+      const x1 = geo.reverse ? a.x : a.x + a.w;
+      const x2 = geo.reverse ? b.x + b.w : b.x;
+      const forward = geo.reverse ? x2 <= x1 + 4 : x2 >= x1 - 4;
+      if (forward) {
+        const mx = (x1 + x2) / 2;
+        // leque de rótulos: arestas paralelas ancoram em diagonal, não no
+        // mesmo ponto médio — acompanha a geometria do feixe.
+        const lo = lanes.out.get(i), li = lanes.inn.get(i);
+        const sp = lo && lo.total > 1 ? lo : li && li.total > 1 ? li : null;
+        const off = sp ? sp.lane - (sp.total - 1) / 2 : 0;
+        return { d: `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`, lx: mx + off * 44, ly: (y1 + y2) / 2 - 10 + off * 30, ortho: false };
+      }
+      const ax = a.x + portAlong(a.w, lanes.out.get(i));
+      const bx = b.x + portAlong(b.w, lanes.inn.get(i));
+      const bus = Math.max(a.y + a.h, b.y + b.h) + 26 + 14 * ((lanes.out.get(i)?.lane ?? 0) % 3);
+      return { d: `M${ax},${a.y + a.h} V${bus} H${bx} V${b.y + b.h}`, lx: (ax + bx) / 2, ly: bus, ortho: true };
+    }
+    const x1 = a.x + portAlong(a.w, lanes.out.get(i));
+    const x2 = b.x + portAlong(b.w, lanes.inn.get(i));
+    const y1 = geo.reverse ? a.y : a.y + a.h;
+    const y2 = geo.reverse ? b.y + b.h : b.y;
+    const forward = geo.reverse ? y2 <= y1 + 4 : y2 >= y1 - 4;
+    if (forward) {
+      const my = (y1 + y2) / 2;
+      const lo = lanes.out.get(i), li = lanes.inn.get(i);
+      const sp = lo && lo.total > 1 ? lo : li && li.total > 1 ? li : null;
+      const off = sp ? sp.lane - (sp.total - 1) / 2 : 0;
+      return { d: `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`, lx: (x1 + x2) / 2 + off * 30, ly: my + off * 40, ortho: false };
+    }
+    const ay = a.y + portAlong(a.h, lanes.out.get(i));
+    const by = b.y + portAlong(b.h, lanes.inn.get(i));
+    const bus = Math.max(a.x + a.w, b.x + b.w) + 26 + 14 * ((lanes.out.get(i)?.lane ?? 0) % 3);
+    return { d: `M${a.x + a.w},${ay} H${bus} V${by} H${b.x + b.w}`, lx: bus, ly: (ay + by) / 2, ortho: true };
+  }), [edges, geo, lanes]);
+
+  // posições dos rótulos de aresta ancoradas na geometria real, com descolisão
+  // (nós = obstáculos fixos). Nós entram como obstáculos; só rótulos se movem.
   const edgeTags = useMemo(() => {
     const items = edges
       .map((e: any, i: number) => {
-        const a = geo.boxes[e.from], b = geo.boxes[e.to];
-        if (!a || !b || !e.label) return null;
-        const label = String(e.label).slice(0, 28);
-        const w = label.length * 7.4 + 18;
-        let x: number, y: number;
-        if (geo.horiz) {
-          x = (a.x + a.w + b.x) / 2; y = (a.y + b.y) / 2 + a.h / 2 - 10;
-        } else {
-          x = (a.x + b.x) / 2 + (a.w + b.w) / 4;
-          y = (a.y + a.h + b.y) / 2;
-        }
-        return { i, label, x, y, w, h: 24 };
+        const p = paths[i];
+        if (!p || !e.label) return null;
+        const label = String(e.label).slice(0, 30);
+        const w = label.length * 7.6 + 20;
+        return { i, label, x: p.lx, y: p.ly, w, h: 26 };
       })
       .filter(Boolean) as { i: number; label: string; x: number; y: number; w: number; h: number }[];
     const obstacles: Tag[] = nodes
       .map((n: any) => geo.boxes[n.id])
       .filter(Boolean)
-      .map((p) => ({ x: p.x + p.w / 2, y: p.y + p.h / 2, w: p.w + 10, h: p.h + 10, fixed: true }));
+      .map((p) => ({ x: p.x + p.w / 2, y: p.y + p.h / 2, w: p.w + 28, h: p.h + 18, fixed: true }));
+    // cabeçalhos dos clusters também desviam rótulos
+    (geo.clusters || []).forEach((c) => {
+      obstacles.push({ x: c.x + c.w / 2, y: 30, w: c.w * 0.7, h: 24, fixed: true });
+    });
     const solved = declutter([...obstacles, ...items.map((t) => ({ ...t }))]);
     const byIndex = new Map(items.map((t, k) => [t.i, solved[obstacles.length + k]]));
     return byIndex;
-  }, [edges, geo, nodes]);
+  }, [edges, geo, nodes, paths]);
 
   return (
     <>
@@ -290,20 +448,23 @@ export function Diagram({ nodes = [], edges = [], direction = "LR", emphasis, di
       >
         <div className="diagram-bar">
           <button className="btn diagram-tool" onClick={() => setZoom((z) => Math.min(2.5, +(z + 0.15).toFixed(2)))} aria-label="Ampliar diagrama">+</button>
-          <button className="btn diagram-tool" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.15).toFixed(2)))} aria-label="Reduzir diagrama">−</button>
-          <button className="btn diagram-tool" onClick={() => { setZoom(1); setActive(null); }}>Repor</button>
-          <span className="diagram-hint">Selecione um nó para ver as conexões</span>
+          <button className="btn diagram-tool" onClick={() => setZoom((z) => Math.max(0.75, +(z - 0.15).toFixed(2)))} aria-label="Reduzir diagrama">−</button>
+          <button className="btn diagram-tool" onClick={resetView}>Repor</button>
           <button className="btn diagram-tool" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded} aria-label={expanded ? "Fechar tela cheia" : "Abrir diagrama em tela cheia"}>
             {expanded ? "✕ Fechar" : "⤢ Expandir"}
           </button>
         </div>
         <div className="diagram-canvas" style={{ minHeight: boxH, overflowX: legible ? undefined : "auto" }}>
           <svg
-            viewBox={`-8 -8 ${(geo.w * zoom).toFixed(0)} ${(geo.h * zoom).toFixed(0)}`}
+            viewBox={`${viewport.x.toFixed(1)} ${viewport.y.toFixed(1)} ${viewport.w.toFixed(1)} ${viewport.h.toFixed(1)}`}
             width={renderW ?? "100%"}
             height={boxH}
             style={renderW ? { minWidth: renderW, margin: "0 auto" } : undefined}
             preserveAspectRatio="xMidYMid meet"
+            onPointerDown={beginPan}
+            onPointerMove={movePan}
+            onPointerUp={endPan}
+            onPointerCancel={endPan}
             role="group"
             aria-label={`Diagrama interativo${active ? `, ${labelOf(byId(nodes)[active] ?? {})} selecionado` : ""}. Use Tab para navegar entre os nós e Enter para selecionar.`}
             className="diagram-svg"
@@ -323,35 +484,27 @@ export function Diagram({ nodes = [], edges = [], direction = "LR", emphasis, di
             {geo.clusters?.map((c) => (
               <g key={c.label} aria-hidden="true">
                 <rect x={c.x - 12} y={8} width={c.w + 24} height={geo.h - 16} rx={20} fill="rgba(117,170,255,0.05)" stroke="rgba(119,141,202,0.3)" strokeDasharray="5 6" />
-                <text x={c.x + c.w / 2} y={30} fontSize={13} fontWeight={700} letterSpacing={1.5} fill="#8e9cbd" textAnchor="middle" style={{ textTransform: "uppercase" }}>{c.label}</text>
+                <text x={c.x + c.w / 2} y={30} fontSize={15} fontWeight={700} letterSpacing={1.2} fill="#aab8dc" textAnchor="middle" style={{ textTransform: "uppercase" }}>{c.label}</text>
               </g>
             ))}
 
             {edges.map((e: any, i: number) => {
-              const a = geo.boxes[e.from], b = geo.boxes[e.to];
-              if (!a || !b) return null;
+              const p = paths[i];
+              if (!p) return null;
               const on = edgeOn(e);
               const hl = !!active && on;
               const violet = i % 2 === 1;
               const stroke = hl ? HL : violet ? "#a77cfa" : "#75aaff";
-              let x1: number, y1: number, x2: number, y2: number, c1x: number, c1y: number, c2x: number, c2y: number;
-              if (geo.horiz) {
-                x1 = a.x + a.w; y1 = a.y + a.h / 2; x2 = b.x; y2 = b.y + b.h / 2;
-                const mx = (x1 + x2) / 2;
-                c1x = mx; c1y = y1; c2x = mx; c2y = y2;
-              } else {
-                x1 = a.x + a.w / 2; y1 = a.y + a.h; x2 = b.x + b.w / 2; y2 = b.y;
-                const my = (y1 + y2) / 2;
-                c1x = x1; c1y = my; c2x = x2; c2y = my;
-              }
               return (
                 <path
                   key={`e${i}`}
-                  d={`M${x1},${y1} C${c1x},${c1y} ${c2x},${c2y} ${x2},${y2}`}
+                  d={p.d}
                   fill="none"
                   stroke={stroke}
                   strokeOpacity={on ? 0.95 : 0.55}
                   strokeWidth={hl ? 3 : 2.2}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
                   data-dim={on ? 0 : 1}
                   markerEnd={`url(#${hl ? "dx-hl" : violet ? "dx-b" : "dx-a"})`}
                 />
@@ -396,39 +549,44 @@ export function Diagram({ nodes = [], edges = [], direction = "LR", emphasis, di
                   <circle cx={p.x + 22} cy={p.y + p.h / 2} r={6} fill={sel ? HL : c} />
                   <text x={p.x + 38} y={t1y} fontSize={geo.fontLabel} fontWeight={680} fill="#f1f4fd">{label}</text>
                   {sub && <text x={p.x + 38} y={t1y + 21} fontSize={geo.fontSub} fill="#a5b2d0">{sub}</text>}
-                  {n.detail && sel && <title>{n.detail}</title>}
+                  {(label !== raw || n.detail) && <title>{n.detail ? `${raw} — ${n.detail}` : raw}</title>}
                 </g>
               );
             })}
 
-            {hasEdges && edges.map((e: any, i: number) => {
+            {edges.map((e: any, i: number) => {
               const t = edgeTags.get(i);
               if (!t) return null;
               const on = edgeOn(e);
               return (
                 <g key={`l${i}`} data-dim={on ? 0 : 1}>
-                  <rect x={t.x - t.w / 2} y={t.y - 18} width={t.w} height={24} rx={9} fill={active && on ? "#2a1f08" : "#0b1224"} fillOpacity={0.94} stroke={active && on ? "rgba(245,158,11,0.5)" : "rgba(119,141,202,0.28)"} />
-                  <text x={t.x} y={t.y - 1} fontSize={14.5} fill={active && on ? "#ffd184" : "#c2cfe8"} textAnchor="middle">{t.label}</text>
+                  <rect x={t.x - t.w / 2} y={t.y - 19} width={t.w} height={26} rx={10} fill={active && on ? "#2a1f08" : "#0d1528"} fillOpacity={0.97} stroke={active && on ? "rgba(245,158,11,0.55)" : "rgba(139,160,220,0.4)"} />
+                  <text x={t.x} y={t.y - 1} fontSize={15} fontWeight={600} fill={active && on ? "#ffd184" : "#d3ddf2"} textAnchor="middle">{t.label}</text>
                 </g>
               );
             })}
           </svg>
         </div>
-        {/* visão alternativa acessível: a lista de adjacências é a fonte da verdade */}
-        <details className="diagram-alt">
-          <summary>Conexões do diagrama ({edges.length})</summary>
-          <ul>
-            {edges.map((e: any, i: number) => (
-              <li key={i}>
-                <strong>{labelOf(byId(nodes)[e.from] ?? { id: e.from })}</strong>
-                <span aria-hidden="true"> → </span>
-                <strong>{labelOf(byId(nodes)[e.to] ?? { id: e.to })}</strong>
-                {e.label ? ` — ${e.label}` : ""}
-              </li>
-            ))}
-            {edges.length === 0 && <li>Nenhuma conexão declarada.</li>}
-          </ul>
-        </details>
+        {/* visão alternativa acessível: a lista de adjacências é a fonte da verdade.
+            Contagens e metadados de layout só aparecem em modo diagnóstico
+            explícito (?debug ou localStorage oc-debug=1). */}
+        {debugInfo && (
+          <details className="diagram-alt">
+            <summary>Conexões e diagnóstico ({edges.length})</summary>
+            <p className="diagram-debug">{debugInfo}</p>
+            <ul>
+              {edges.map((e: any, i: number) => (
+                <li key={i}>
+                  <strong>{labelOf(byId(nodes)[e.from] ?? { id: e.from })}</strong>
+                  <span aria-hidden="true"> → </span>
+                  <strong>{labelOf(byId(nodes)[e.to] ?? { id: e.to })}</strong>
+                  {e.label ? ` — ${e.label}` : ""}
+                </li>
+              ))}
+              {edges.length === 0 && <li>Nenhuma conexão declarada.</li>}
+            </ul>
+          </details>
+        )}
       </div>
     </>
   );
