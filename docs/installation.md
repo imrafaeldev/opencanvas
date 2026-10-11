@@ -18,6 +18,11 @@ Idempotente, com backup `.bak.<timestamp>`, conflito de `/canvas` preexistente n
 `uninstall` remove só adapters (dados preservados; `--purge-data` apaga com backup prévio).
 Teste automatizado usa `HOME`/`USERPROFILE` isolados e nunca toca nas configs reais (`src/tests/cli.test.ts`).
 
+O runtime é iniciado com Node (≥20), inclusive dentro do OpenCode compilado:
+`process.execPath` nesse host aponta para `opencode`, não para Node. Mantenha
+`node` no `PATH` do serviço OpenCode. Após atualizar o build/plugin, recarregue
+o OpenCode para usar o código novo.
+
 ## Windows
 
 Paridade com Linux: `npm install && npm run build && npm test` passam no PowerShell/cmd

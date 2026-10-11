@@ -17,8 +17,8 @@
   --border-blue: rgba(103, 145, 250, 0.36);
   --border-violet: rgba(171, 115, 247, 0.53);
   --text: #f1f4fd;
-  --muted: #b3bfdb;
-  --dim: #8e9cbd;
+  --muted: #c0cbe2;
+  --dim: #a5b2d0;
   --blue: #75aaff;
   --blue-2: #597dff;
   --violet: #a77cfa;
@@ -38,14 +38,14 @@
   --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   /* --- escala tipográfica editorial fluida ---
-     Corpus técnico confortável (17–18.5px), labels >= 14.5px, mono 15.5px.
+     Corpus técnico confortável (17–18.5px), labels >= 16px, mono 15.5px.
      Hierarquia expressiva sem dominar o conteúdo técnico. */
   --fs-display: clamp(40px, 4.3vw, 68px);   /* título principal / capa   */
   --fs-lead:    clamp(18px, 1.35vw, 22px);  /* subtítulo / lead         */
   --fs-h2:      clamp(29px, 2.2vw, 40px);   /* título de seção          */
   --fs-h3:      clamp(21px, 1.35vw, 25px);  /* título de componente     */
   --fs-body:    clamp(17px, 1.08vw, 18.5px);/* texto principal          */
-  --fs-label:   14.5px;                     /* labels e anotações       */
+  --fs-label:   16px;                       /* labels e anotações       */
   --fs-mono:    15.5px;
   --lh-body: 1.55;
 
@@ -249,36 +249,39 @@ svg { display: block; }
 /* diagrama: caixa estável + área útil preenchida */
 .diagram-frame { display: flex; flex-direction: column; overflow: hidden; }
 .diagram-bar { display: flex; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--border-soft); align-items: center; flex-wrap: wrap; }
-.diagram-tool { padding: 7px 13px; font-size: 13.5px; }
-.diagram-hint { margin-left: auto; margin-right: var(--sp-2); font-size: 13.5px; color: var(--dim); }
-.diagram-canvas { position: relative; width: 100%; padding: var(--sp-3) var(--sp-4); display: grid; place-items: center; }
-/* viewport pan/zoom: scroll nativo + arrasto; o svg tem tamanho real (geo*k) */
-.diagram-scroll { display: flex; overflow: auto; cursor: grab; touch-action: pan-x pan-y; overscroll-behavior: contain; }
+.diagram-bar > * { flex: 0 0 auto; }
+.diagram-tool { padding: 8px 14px; font-size: 15px; }
+.diagram-hint { margin-left: auto; margin-right: var(--sp-2); font-size: 15px; color: var(--muted); white-space: nowrap; }
+.diagram-canvas { position: relative; width: 100%; padding: var(--sp-3) var(--sp-4); display: block; }
+/* viewport pan/zoom: o SVG ocupa o viewport; exploração ocorre por pan, não por scrollbar aninhada. */
+.diagram-scroll { overflow: hidden; cursor: grab; touch-action: pan-y pinch-zoom; overscroll-behavior: auto; user-select: none; }
 .diagram-scroll:active { cursor: grabbing; }
-.diagram-scroll .diagram-svg { display: block; }
-.diagram-zoom { font-size: 13px; font-variant-numeric: tabular-nums; color: var(--dim); min-width: 48px; text-align: center; }
+.diagram-scroll .diagram-svg { display: block; width: 100%; height: 100%; overflow: hidden; }
+.diagram-zoom { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; color: var(--text); min-width: 52px; text-align: center; }
 /* tooltip contextual do nó selecionado */
-.diagram-tip { position: absolute; left: var(--sp-3); bottom: var(--sp-3); z-index: 5; max-width: min(340px, 80%); background: rgba(11, 18, 36, 0.96); border: 1px solid var(--border-blue); border-radius: var(--radius-s); padding: var(--sp-2) var(--sp-3); box-shadow: 0 12px 32px rgba(0,0,0,0.45); font-size: var(--fs-label); }
+.diagram-inspector { flex: none; display: grid; gap: var(--sp-2); margin: 0 var(--sp-3) var(--sp-3); max-width: min(760px, calc(100% - var(--sp-6))); background: rgba(11, 18, 36, 0.96); border: 1px solid var(--border-blue); border-radius: var(--radius-s); padding: var(--sp-3) var(--sp-4); box-shadow: 0 12px 32px rgba(0,0,0,0.35); font-size: var(--fs-label); }
 .diagram-tip-head { display: flex; align-items: center; gap: var(--sp-2); }
-.diagram-tip-head strong { flex: 1; font-size: 15px; }
-.diagram-tip-sub { color: var(--dim); font-size: 13px; margin-top: 2px; }
-.diagram-tip p { color: var(--muted); margin: var(--sp-1) 0 0; line-height: 1.5; }
-.diagram-tip ul { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: grid; gap: 4px; }
-.diagram-link { background: none; border: 0; padding: 0; color: var(--blue); cursor: pointer; font-size: 13.5px; text-align: left; }
+.diagram-tip-head strong { flex: 1; font-size: 16px; }
+.diagram-tip-sub { color: var(--muted); font-size: 14px; margin-top: 2px; }
+.diagram-inspector p { color: var(--muted); margin: 0; line-height: 1.5; }
+.diagram-inspector ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.diagram-link { background: none; border: 0; padding: 0; color: var(--blue); cursor: pointer; font-size: 15px; text-align: left; }
 .diagram-link:hover { text-decoration: underline; }
 /* diagnóstico: apenas com ?debug ou prop debug */
-.diagram-debug { border-top: 1px solid var(--border-soft); padding: 6px var(--sp-4); font-family: var(--mono); font-size: 12px; color: var(--dim); }
+.diagram-debug { border-top: 1px solid var(--border-soft); padding: 8px var(--sp-4); font-family: var(--mono); font-size: 13px; color: var(--dim); }
 /* seleção contextual: o resto esmaece, o caminho ativo destaca */
 .diagram-node { cursor: pointer; outline: none; }
 .diagram-node:focus-visible rect { stroke-width: 3; stroke-dasharray: 7 4; }
+.diagram-edge, .diagram-edge-label { cursor: pointer; outline: none; }
+.diagram-edge:focus-visible path, .diagram-edge-label:focus-visible rect { stroke: var(--amber); stroke-width: 3; }
 .diagram-svg [data-dim="1"] { opacity: 0.22; transition: opacity 0.18s ease; }
 .diagram-svg [data-dim="0"] { transition: opacity 0.18s ease; }
 /* expansão em tela cheia para explorar diagramas complexos */
 .diagram-scrim { position: fixed; inset: 0; background: rgba(4, 7, 15, 0.74); z-index: 99; }
-.diagram-frame.expanded { position: fixed; inset: clamp(12px, 3vh, 32px) clamp(12px, 3vw, 40px); z-index: 100; }
+.diagram-frame.expanded { position: fixed; inset: clamp(12px, 3vh, 32px) clamp(12px, 3vw, 40px); z-index: 100; background: var(--panel); }
 .diagram-frame.expanded .diagram-canvas { flex: 1; min-height: 0 !important; }
 /* visão alternativa acessível: lista de adjacências */
-.diagram-alt { border-top: 1px solid var(--border-soft); padding: var(--sp-2) var(--sp-4) var(--sp-3); font-size: var(--fs-label); color: var(--muted); }
+.diagram-alt { border-top: 1px solid var(--border-soft); padding: var(--sp-3) var(--sp-4) var(--sp-4); font-size: var(--fs-label); color: var(--muted); }
 .diagram-alt summary { cursor: pointer; font-weight: 650; color: var(--dim); }
 .diagram-alt summary:hover { color: var(--text); }
 .diagram-alt ul { margin: var(--sp-2) 0 0; padding-left: 20px; display: grid; gap: 6px; }
@@ -482,7 +485,9 @@ table.t th { color: var(--muted); font-weight: 650; font-size: var(--fs-label); 
   .detail-step .small-icon { display: none; }
   .security-item .small-icon { display: none; }
   .takeaway { align-items: flex-start; }
-  .diagram-bar { flex-wrap: nowrap; overflow-x: auto; }
+  .diagram-bar { flex-wrap: wrap; overflow: visible; }
+  .diagram-hint { width: 100%; margin-left: 0; margin-right: 0; }
+  .diagram-inspector { max-width: none; margin-inline: var(--sp-2); }
   table.t { font-size: 15px; }
   table.t th, table.t td { padding: var(--sp-2) var(--sp-1); }
 }

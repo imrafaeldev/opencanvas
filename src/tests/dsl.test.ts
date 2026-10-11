@@ -7,7 +7,7 @@ const good = JSON.parse(fs.readFileSync(new URL("../../fixtures/auth-flow.json",
 
 describe("DSL", () => {
   it("aceita fixtures reais", () => {
-    for (const f of ["auth-flow", "microservices", "kafka-pipeline", "database", "comparison", "timeline", "dashboard", "code-walkthrough", "http-flow", "fullstack", "auth-canvas"]) {
+    for (const f of ["auth-flow", "microservices", "kafka-pipeline", "database", "comparison", "timeline", "dashboard", "code-walkthrough", "http-flow", "fullstack", "auth-canvas", "diagram-stress"]) {
       const dsl = JSON.parse(fs.readFileSync(new URL(`../../fixtures/${f}.json`, import.meta.url), "utf8"));
       const r = validateDSL(dsl);
       assert.equal((r as any).ok, true, `${f}: ${JSON.stringify((r as any).error)}`);

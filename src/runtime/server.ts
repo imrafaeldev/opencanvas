@@ -4,11 +4,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Store, defaultBaseDir } from "../storage/store.js";
+import { runtimeId } from "./supervisor.js";
 
 const args = Object.fromEntries(process.argv.slice(2).map(a => {
   const m = a.match(/^--([^=]+)=(.*)$/); return m ? [m[1], m[2]] : [a.replace(/^--/, ""), "1"];
 }));
 const BASE = (args.base as string) || process.env.OPENCANVAS_HOME || defaultBaseDir();
+const RUNTIME_ID = runtimeId(BASE);
 const PORT = Number(args.port || process.env.OPENCANVAS_PORT || 4173);
 const HOST = "127.0.0.1";
 const WEB = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "web");
@@ -45,7 +47,7 @@ const server = http.createServer((req, res) => {
   res.setHeader("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; script-src 'self'");
   res.setHeader("X-Content-Type-Options", "nosniff");
 
-  if (p === "/health") return send(res, 200, JSON.stringify({ status: "ok", version: "0.1.0", at: new Date().toISOString() }));
+  if (p === "/health") return send(res, 200, JSON.stringify({ status: "ok", runtimeId: RUNTIME_ID, version: "0.1.0", at: new Date().toISOString() }));
   if (p === "/api/events") {
     res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
     res.write(`: connected\n\n`);

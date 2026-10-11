@@ -115,7 +115,7 @@ function HubNode({ n, violet }: { n: any; violet?: boolean }) {
  * as colunas são escolhidas para que a última linha nunca fique órfã.
  */
 function StepCards({ b }: { b: any }) {
-  const items: any[] = b.items || b.children || [];
+  const items: any[] = b.items || b.steps || b.children || [];
   const flow = b.variant === "flow";
   const density = useDensity(items.length, b.density);
   const { ref, plan, style, align } = useComposition(items.length, {

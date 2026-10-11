@@ -1,6 +1,12 @@
+---
+name: opencanvas
+description: Cria e atualiza canvases visuais pelo plugin OpenCanvas (tools canvas_*) para explicar arquitetura, código, fluxos e diagramas. Use para /canvas. Gera DSL JSON, nunca React/JSX.
+---
+
 # OpenCanvas Skill — planejamento visual + DSL (agnóstica ao agente)
 
 Use o OpenCanvas quando o usuário pedir explicação visual, arquitetura, fluxo, diagrama, comparação, timeline, dashboard, code walkthrough ou `/canvas`.
+Esta skill usa a DSL do OpenCanvas; a skill genérica `canvas` e arquivos `.canvas.tsx` não se aplicam a essas tools.
 
 ## Quando usar
 - `/canvas <pedido>` (OpenCode) ou pedido equivalente via MCP em Codex/Cursor/Claude.
@@ -66,6 +72,7 @@ Regras: `title` curto; `id` alfanumérico estável; diagrama referencia apenas `
 - `REVISION_CONFLICT`: recarregue com `canvas_get` e reaplique o patch sobre a revisão atual. Nunca sobrescreva às cegas.
 - `DSL_SCHEMA_INVALID`: leia `path` + `hint` do erro e corrija só o bloco indicado.
 - `ADAPTER_CONTEXT_MISSING`: reenvie com `cwd` explícito do workspace aberto.
+- `RUNTIME_UNAVAILABLE`: o canvas pode já estar persistido. Consulte `canvas_get`/`canvas_list` antes de repetir a criação; não crie duplicatas nem repita `canvas_open` indefinidamente.
 - Cross-agent: o mesmo `cwd` canônico gera o mesmo projeto em qualquer agente — criar no OpenCode e atualizar no Codex é o comportamento esperado.
 
 ## Economia de tokens
