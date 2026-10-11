@@ -419,35 +419,6 @@ export function Diagram({ nodes = [], edges = [], direction = "LR", emphasis, di
   };
   const endDrag = () => { drag.current = null; };
 
-  const viewport = useMemo(() => {
-    const w = bounds.w / Math.max(0.75, zoom);
-    const h = bounds.h / Math.max(0.75, zoom);
-    const maxPanX = Math.max(0, (bounds.w - w) / 2);
-    const maxPanY = Math.max(0, (bounds.h - h) / 2);
-    const x = bounds.x + (bounds.w - w) / 2 + Math.max(-maxPanX, Math.min(maxPanX, pan.x));
-    const y = bounds.y + (bounds.h - h) / 2 + Math.max(-maxPanY, Math.min(maxPanY, pan.y));
-    return { x, y, w, h };
-  }, [bounds, pan, zoom]);
-
-  const resetView = () => { setZoom(1); setPan({ x: 0, y: 0 }); setActive(null); };
-  const beginPan = (e: React.PointerEvent<SVGSVGElement>) => {
-    const target = e.target as Element;
-    if (target.closest?.(".diagram-node")) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    dragRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
-  };
-  const movePan = (e: React.PointerEvent<SVGSVGElement>) => {
-    const drag = dragRef.current;
-    if (!drag || drag.id !== e.pointerId) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const unitsX = viewport.w / Math.max(1, rect.width);
-    const unitsY = viewport.h / Math.max(1, rect.height);
-    setPan({ x: drag.panX - (e.clientX - drag.x) * unitsX, y: drag.panY - (e.clientY - drag.y) * unitsY });
-  };
-  const endPan = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (dragRef.current?.id === e.pointerId) dragRef.current = null;
-  };
-
   // Diagnóstico interno (contagens, camadas, auto-fit): oculto por padrão,
   // visível só com ?debug na URL ou oc-debug=1 no localStorage.
   const debugInfo = useMemo(() => {
